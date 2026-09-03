@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metrik-goz"
+version = "0.0.1"
+description = "Tek fotoğraftan gerçek ölçü, dürüst hata payıyla"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+
+[tool.setuptools.packages.find]
+include = ["metrik_goz*"]
+
+[tool.pytest.ini_options]
+testpaths = ["testler"]

@@ -109,3 +109,90 @@ def test_en_dar_gecit_bilinen_koridoru_buluyor():
     assert abs(gecit.genislik_mm - 120.0) < 12.0
     assert gecit.gecer_mi(100.0)
     assert not gecit.gecer_mi(150.0)
+
+
+# ----------------------------------------------------------------- benzerlik modeli
+def test_olcekten_tepeden_bakista_tam_isabet():
+    """
+    Tam tepeden bakışta (nadir) ölçek düzlemin her yerinde aynı; tek bilinen
+    uzunluktan kurulan benzerlik modeli orada KUSURSUZ olmalı — referanstan ne
+    kadar uzakta ölçtüğün fark etmemeli. Modelin geçerlilik iddiası bu.
+    """
+    sahne = sahne_kur(referans_boyut_mm=26.15, egim_derece=0.0, mesafe_mm=520.0)
+    uc = sahne.izdusur([[-13.075, 0.0], [13.075, 0.0]])
+    h = Homografi.olcekten(uc[0], uc[1], 26.15)
+    assert h.model == "benzerlik"
+
+    for uzaklik in (0.0, 100.0, 250.0):
+        a, b = np.array([uzaklik, -60.0]), np.array([uzaklik + 90.0, 40.0])
+        gercek = float(np.hypot(*(b - a)))
+        olculen = olcum.mesafe(h, sahne.izdusur(a)[0], sahne.izdusur(b)[0])
+        assert abs(olculen - gercek) / gercek < 1e-9
+
+
+def test_olcekten_egik_bakista_yaniliyor():
+    """
+    Aynı model eğik bakışta yanılmalı — ve bu bir kusur değil, ilan edilmiş
+    sınır. Sessizce doğru sanılması tehlikeli olan tam bu durum.
+    """
+    sahne = sahne_kur(referans_boyut_mm=26.15, egim_derece=35.0, mesafe_mm=520.0)
+    uc = sahne.izdusur([[-13.075, 0.0], [13.075, 0.0]])
+    h = Homografi.olcekten(uc[0], uc[1], 26.15)
+
+    a, b = np.array([200.0, 0.0]), np.array([320.0, 0.0])
+    gercek = float(np.hypot(*(b - a)))
+    olculen = olcum.mesafe(h, sahne.izdusur(a)[0], sahne.izdusur(b)[0])
+    assert abs(olculen - gercek) / gercek > 0.05
+
+
+def test_olcekten_dejenere_girdiyi_reddediyor():
+    with pytest.raises(ValueError):
+        Homografi.olcekten([10.0, 10.0], [10.0, 10.0], 26.15)
+    with pytest.raises(ValueError):
+        Homografi.olcekten([0.0, 0.0], [50.0, 0.0], 0.0)
+
+
+# ----------------------------------------------------------------- kutu ölçümü
+def test_kutu_kenarlari_ve_alani_dogru():
+    sahne = sahne_kur(egim_derece=30.0)
+    h = Homografi.kur(sahne.referans_dunya, sahne.referans_px)
+
+    en, boy = 146.7, 71.5
+    kose = np.array([[-en / 2, -boy / 2], [en / 2, -boy / 2],
+                     [en / 2, boy / 2], [-en / 2, boy / 2]])
+    k = olcum.kutu(h, sahne.izdusur(kose))
+
+    assert k.en_mm == pytest.approx(en, rel=1e-9)
+    assert k.boy_mm == pytest.approx(boy, rel=1e-9)
+    assert k.alan_mm2 == pytest.approx(en * boy, rel=1e-9)
+    assert k.kosegen_mm == pytest.approx(np.hypot(en, boy), rel=1e-9)
+    # Projektif model perspektifi düzelttiği için sapma sıfır olmalı.
+    assert k.dikdortgenlik < 1e-9
+
+
+def test_kutu_dikdortgenligi_egikligi_ele_veriyor():
+    """
+    `dikdortgenlik`, kullanıcının bilmediği eğimin gözlenebilir vekili: ölçek
+    modelinde eğik bakış nesneyi yamuk gösterir, karşılıklı kenarlar ayrışır.
+    Uyarı katmanı bu sayıya dayanıyor, o yüzden eğimle büyümesi şart.
+    """
+    en, boy = 146.7, 71.5
+    kose = np.array([[-en / 2, -boy / 2], [en / 2, -boy / 2],
+                     [en / 2, boy / 2], [-en / 2, boy / 2]]) + np.array([150.0, 0.0])
+
+    sapmalar = []
+    for egim in (0.0, 15.0, 35.0):
+        sahne = sahne_kur(referans_boyut_mm=26.15, egim_derece=egim, mesafe_mm=520.0)
+        uc = sahne.izdusur([[-13.075, 0.0], [13.075, 0.0]])
+        h = Homografi.olcekten(uc[0], uc[1], 26.15)
+        sapmalar.append(olcum.kutu(h, sahne.izdusur(kose)).dikdortgenlik)
+
+    assert sapmalar[0] < 1e-9
+    assert sapmalar[0] < sapmalar[1] < sapmalar[2]
+
+
+def test_kutu_dort_kose_istiyor():
+    sahne = sahne_kur()
+    h = Homografi.kur(sahne.referans_dunya, sahne.referans_px)
+    with pytest.raises(ValueError):
+        olcum.kutu(h, sahne.izdusur([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0]]))

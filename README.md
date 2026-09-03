@@ -29,12 +29,12 @@ paket o alt ucu güvenilir biçimde üretmek için var.
 
 ## Ne yapıyor
 
-Sahnede boyutu bilinen bir referans (ArUco işareti, kredi kartı, A4 kâğıt)
-olduğunda, o referansla **aynı düzlem üzerindeki** her şeyi milimetre cinsinden
-ölçer:
+Sahnede boyutu bilinen bir şey olduğunda, onunla **aynı düzlem üzerindeki** her
+şeyi milimetre cinsinden ölçer:
 
 | Ölçüm | Ne veriyor |
 |---|---|
+| `kutu` | dört köşesi işaretlenen nesnenin eni, boyu, alanı |
 | `mesafe` | iki nokta arası, mm |
 | `uzunluk` | kırık çizginin toplam boyu, mm |
 | `alan` | çokgen alanı, mm² |
@@ -42,6 +42,17 @@ olduğunda, o referansla **aynı düzlem üzerindeki** her şeyi milimetre cinsi
 
 Her ölçüm bir `Olcum` nesnesi döner: değer, standart sapma, güven aralığı ve
 hangi yöntemle hesaplandığı.
+
+Referans iki aileden biri olabilir ve fark, ölçümün ne kadarına
+güvenebileceğini belirliyor:
+
+| Referans ailesi | Ne veriyorsun | Ne kazanıyorsun |
+|---|---|---|
+| **benzerlik** (`Homografi.olcekten`) | tek bir bilinen **uzunluk** — madeni paranın çapı, kartın uzun kenarı — ve iki ucu | ölçek. Perspektif **düzeltilmiyor**: fotoğraf tepeden çekildiyse doğru, eğik çekildiyse sistematik olarak yanlış |
+| **projektif** (`Homografi.kur`) | dört nokta — ArUco işareti ya da dikdörtgen bir nesnenin köşeleri | ölçek **ve** perspektif düzeltmesi |
+
+Ucuz olan yol her zaman geçerli değil; hangisinin ne zaman tutmadığı
+[Doğrulama](#doğrulama) bölümünde ölçülmüş durumda.
 
 ---
 
@@ -51,7 +62,7 @@ hangi yöntemle hesaplandığı.
 from metrik_goz import Homografi, olcum, belirsizlik, referans
 import cv2
 
-goruntu = cv2.imread("tezgah.jpg")
+goruntu = cv2.imread("masa.jpg")
 dunya, resim, kimlik = referans.aruco_bul(goruntu, kenar_mm=100.0)
 
 h = Homografi.kur(dunya, resim)
@@ -65,11 +76,26 @@ sonuc = belirsizlik.monte_carlo(
 print(sonuc)          # 412.3 ± 8.7 mm (%95: 395.1–429.4)
 ```
 
+Elinde ArUco yoksa, yanına koyduğun bir madeni paranın çapı da yeter — o zaman
+homografiyi referansın kendi modeli kuruyor:
+
+```python
+kur = lambda uc: Homografi.olcekten(uc[0], uc[1], 26.15)   # 1 TL çapı
+
+sonuc = belirsizlik.monte_carlo(
+    None, para_uclari_px,
+    lambda hh, nn: olcum.kutu(hh, nn).en_mm,
+    telefon_koseleri_px, sigma_px=1.5, kur_fn=kur,
+)
+```
+
 Komut satırından:
 
 ```bash
-metrik-goz mesafe tezgah.jpg --aruco 100 --nokta 412,690 --nokta 905,712
-metrik-goz gecit  enkaz.jpg  --aruco 200 --maske serbest.png --ayak-izi 480
+metrik-goz kutu   masa.jpg  --olcek-ad 1_tl --uc 812,455 --uc 888,455 \
+                            --kose-nesne ... (nesnenin 4 köşesi)
+metrik-goz mesafe masa.jpg  --aruco 100 --nokta 412,690 --nokta 905,712
+metrik-goz gecit  enkaz.jpg --aruco 200 --maske serbest.png --ayak-izi 480
 metrik-goz dogrula --cikti dogrulama/
 ```
 
@@ -91,9 +117,14 @@ tıkladığın noktalar, sağ tarafta ölçüm, hata payı ve uyarılar.
 | Adım | Panelde |
 |---|---|
 | Görsel | sürükle-bırak, `⌘V` ile yapıştır ya da dosya seç |
-| Referans | ArUco'yu otomatik bul, ya da kredi kartı / A4 / kare-dikdörtgen köşelerini elle tıkla |
-| Ölçüm | mesafe, kırık çizgi uzunluğu, çokgen alanı, serbest alanın en dar geçidi |
-| Çalıştır | sonuç, güven aralığı, geçit için GEÇER/GEÇMEZ kararı ve genişlik profili |
+| Referans | **Uzunluk**: listeden bir para/kart seç, iki ucunu tıkla · **Dikdörtgen**: kredi kartı / A4 / kendi ölçün, dört köşesini tıkla · **ArUco**: otomatik bul |
+| Nesne | ölçmek istediğin şeyin üstüne dört köşeli bir kutu çiz |
+| Sonuç | en, boy ve alan; her biri güven aralığıyla, en tehlikelisi başta olmak üzere uyarılarla |
+
+Panel tek bir akış sürüyor — "şu nesne kaç santim". `mesafe`, `uzunluk`, `alan`
+ve `en_dar_gecit` ölçümleri kütüphanede, CLI'da ve `/api/olc` uç noktasında
+duruyor; panelde yok, çünkü tek akışlı bir arayüz yanlış tıklamayla yanlış
+ölçüm yapılan bir arayüzden iyi.
 
 Noktaları sürükleyerek düzeltebilir, tekerlekle yakınlaşabilirsin; imlecin
 yanındaki büyüteç köşeyi piksel piksel oturtmak için. Tıklama gürültüsü ölçüm
@@ -114,7 +145,7 @@ bayrağı taşıyor; tarayıcı onu uygular, sunucu uygulamazsa senin tıkladı�
 ### Elinde fotoğraf yoksa
 
 ```bash
-metrik-goz ornek --sahne tezgah --cikti ornekler/
+metrik-goz ornek --sahne hepsi --cikti ornekler/
 ```
 
 Panelin sağ üstündeki **örnek** düğmeleri doğru cevabı bilinen sentetik sahneler
@@ -122,10 +153,17 @@ açıyor: kamerayı, referansı ve ölçülecek mesafeyi biz koyduğumuz için p
 ölçümün yanına gerçek değeri de yazabiliyor. Güven aralığının tutup tutmadığını
 tek bakışta görmenin başka yolu yok — gerçek fotoğrafta doğru cevap yoktur.
 
-| Örnek | Ne var | Doğru cevap |
-|---|---|---|
-| `tezgah` | 100 mm ArUco, iki hedef, kenarları çizili dikdörtgen | 410,0 mm · 336,0 cm² |
-| `gecit` | 200 mm ArUco, ortada daralan serbest koridor | 520,0 mm |
+| Örnek | Ne var | Doğru cevap | Panelde |
+|---|---|---|---|
+| `duz` | masada telefon, yanında 1 TL; neredeyse tam tepeden çekim | 146,7 × 71,5 mm · 104,9 cm² | ✓ |
+| `egik` | aynı sahne, 26° eğik çekim | aynı | ✓ |
+| `gecit` | 200 mm ArUco, ortada daralan serbest koridor | 520,0 mm | CLI/API |
+
+`duz` ile `egik` aynı doğru cevaba sahip ve aralarındaki tek fark kamera açısı —
+ikisini arka arkaya çalıştırmak, tek uzunluktan kurulan ölçeğin nerede tuttuğunu
+nerede tutmadığını bir bakışta gösteriyor. `egik` sahnede sistem 146,7 mm yerine
+112 mm ölçüyor **ve bunu yüksek seviyeli bir uyarıyla söylüyor**; sessizce
+yanılmıyor.
 
 ---
 
@@ -137,6 +175,13 @@ tek bakışta görmenin başka yolu yok — gerçek fotoğrafta doğru cevap yok
 arasındaki projektif dönüşümü belirliyor. Önce Hartley normalizasyonlu DLT ile
 kapalı formda bir başlangıç çözümü, sonra elle yazılmış Levenberg–Marquardt ile
 iyileştirme.
+
+Elde dört nokta yoksa — cebinden çıkardığın paranın yalnız çapını biliyorsun —
+projektif dönüşüm kurulamaz: iki nokta ve bir uzunluk üç sayı taşır, projektif
+dönüşümün ise sekiz serbestliği vardır. Eksik bilgiyi uydurmak yerine daha dar
+bir model kuruluyor (`Homografi.olcekten`): ölçek + döndürme + öteleme, yani
+perspektif **düzeltilmiyor**. Bu, ucuz bir kısayol değil; ilan edilmiş ve
+ölçülmüş bir sınır — nerede tuttuğu aşağıda.
 
 DLT tek başına neden yetmiyor: DLT *cebirsel* hatayı minimize eder, oysa bizim
 küçültmek istediğimiz *geometrik* yeniden izdüşüm hatası. Gürültü altında bu
@@ -220,6 +265,38 @@ homografinin perspektifi zaten tam olarak modellemesi. Belirleyici olan bakış
 açısı değil, **referansın görüntüdeki piksel boyutu** ve ölçülen yerin ondan ne
 kadar uzakta olduğu.
 
+### Tek uzunluktan ölçek nerede tutuyor, nerede tutmuyor
+
+Yukarıdaki her şey dört noktalı projektif referans için. Kullanıcının elinde
+çoğu zaman o yok, bir madeni para var — ve o modelin zaafı bambaşka bir yerde.
+
+![benzerlik](dogrulama/benzerlik.png)
+
+| Koşul | Sistematik yanlılık | Kapsama |
+|---|---|---|
+| Tam tepeden çekim, referans nerede olursa olsun | %0,000 | %95,1 |
+| 30° eğik çekim | %16,9 | %27,1 |
+
+Okunacak üç şey var:
+
+**Yanlılığı üreten şey eğim, uzaklık değil.** Tam tepeden çekimde ölçek düzlemin
+her yerinde aynı olduğu için para nerede durursa dursun yanlılık sıfır — projektif
+modelde risk olan "referanstan uzaklık" burada tek başına zararsız. Bakış
+yatıklaştıkça yanlılık büyüyor ve uzaklık onu çarpan olarak büyütüyor.
+
+**Bu yanlılık hata payının İÇİNDE DEĞİL.** Monte Carlo tıklama gürültüsünü
+sayıyor, modelin kendi kusurunu sayamaz — o yüzden eğim büyürken kapsama
+%95,1'ten %27,1'e çöküyor. Aralığın genişliği doğru, merkezi kayıyor.
+Bir sistemin sessizce yanılabildiği yer tam olarak burası, o yüzden ortaya
+yazıyoruz.
+
+**Kullanıcı eğimi bilmiyor ama sistem görebiliyor.** Ölçülen nesnenin karşılıklı
+kenarları eğik çekimde ayrışıyor; `Kutu.dikdortgenlik` bu ayrışmayı ölçüyor ve
+eğimin gözlenebilir vekili oluyor. %6 eşiği, %5'ten büyük yanlılığın
+**%78'ini** yakalıyor; %16 yanlış alarm karşılığında. Panelin ve CLI'ın
+"fotoğraf eğik çekilmiş, hata payı bunu kapsamıyor" uyarısı bu sayıya dayanıyor —
+uyarı metni bir tahmin değil, ölçülmüş bir yakalama oranı.
+
 ### Hızlı yol yavaş yolla aynı sonucu veriyor mu
 
 ![analitik](dogrulama/analitik_vs_mc.png)
@@ -236,9 +313,15 @@ Bunları README'nin sonuna değil ortasına yazmak lazım, çünkü sistemin ses
 yanıldığı yerler bunlar:
 
 - **Düzlem varsayımı.** Ölçülen her şey referansla aynı düzlemde olmalı.
-  Tezgâha koyduğun kartla tezgâhtaki domatesi ölçebilirsin; raftaki kutuyu
+  Masaya koyduğun kartla masadaki domatesi ölçebilirsin; raftaki kutuyu
   ölçemezsin. `Homografi.duzlem_disi_uyarisi` referanstan ne kadar
   uzaklaştığını raporluyor; 2'nin üstünde ölçüme güvenme.
+- **Tek uzunluktan ölçekte perspektif.** Bir paranın çapıyla kurulan benzerlik
+  modeli perspektifi düzeltmiyor ve bıraktığı yanlılık hata payının içinde
+  değil — 30° eğik çekimde %16,9 yanlılık, %27,1 kapsama. Sistem bunu
+  `Kutu.dikdortgenlik` üzerinden yakalayıp uyarıyor (ciddi yanlılığın %78'i),
+  ama yakalayamadığı %22 var: fotoğrafı nesnenin tam üstünden çek, ya da
+  referans olarak dikdörtgen bir şey kullanıp dört köşesini işaretle.
 - **Lens bozulması.** Geniş açılı telefon kameralarında kenar bölgeler için
   önce düzeltme gerekiyor. Şu an paket bunu yapmıyor, kamera iç parametreleri
   desteği bir sonraki adım.
@@ -254,7 +337,7 @@ yanıldığı yerler bunlar:
 
 ```bash
 pip install -e ".[gelistirme]"
-pytest testler/ -q          # 39 test, ~8 sn
+pytest testler/ -q          # 56 test, ~15 sn
 metrik-goz dogrula          # grafikleri ve sonuclar.json'u üretir (~1 dk)
 metrik-goz panel            # web panelini aç
 ```

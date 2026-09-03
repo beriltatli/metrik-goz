@@ -122,3 +122,43 @@ def test_uzakta_belirsizlik_buyuyor():
     y = np.median([mc.std / g for g, mc, _ in yakin])
     u = np.median([mc.std / g for g, mc, _ in uzak])
     assert u > 1.5 * y, f"uzakta bağıl belirsizlik büyümedi ({y:.4f} -> {u:.4f})"
+
+
+# --------------------------------------------- benzerlik modelinin ilan edilmiş sınırı
+def test_benzerlik_tepeden_kusursuz():
+    """
+    Tek bilinen uzunluktan kurulan ölçek, tam tepeden çekimde referans nerede
+    olursa olsun yanlılık üretmemeli — ve orada aralık da tutmalı. Panelin
+    "fotoğraf nesnenin tam üstünden çekildiyse sonuç doğru" cümlesinin sınavı.
+    """
+    from metrik_goz.dogrulama import benzerlik_taramasi
+
+    tarama = benzerlik_taramasi(n=15, tohum=7)
+    assert tarama["tepeden_p90_yanlilik"] < 1e-6
+    assert tarama["tepeden_kapsama"] >= 0.88
+
+
+def test_benzerlik_egimde_yaniliyor_ve_kapsama_cokuyor():
+    """
+    Eğik çekimde model sistematik olarak yanılıyor ve bu yanlılık hata payının
+    İÇİNDE DEĞİL — kapsama çöküyor. Bu bir kusur değil ilan edilmiş sınır;
+    testin işi sınırın hâlâ orada olduğunu doğrulamak.
+    """
+    from metrik_goz.dogrulama import benzerlik_taramasi
+
+    tarama = benzerlik_taramasi(n=15, tohum=7)
+    assert tarama["yatik_ortanca_yanlilik"] > 0.05
+    assert tarama["yatik_kapsama"] < 0.6
+
+
+def test_dikdortgenlik_uyarisi_ciddi_yanliligi_yakaliyor():
+    """
+    Kullanıcı kamerasının eğimini bilmiyor; sistemin elindeki tek gözlenebilir
+    işaret karşılıklı kenarların ayrışması. Uyarı eşiği ciddi yanlılığın büyük
+    kısmını yakalamıyorsa uyarı süs demektir.
+    """
+    from metrik_goz.dogrulama import benzerlik_taramasi
+
+    tarama = benzerlik_taramasi(n=15, tohum=7)
+    assert tarama["yakalama"] > 0.6, f"yakalama {tarama['yakalama']:.2f}"
+    assert tarama["yanlis_alarm"] < 0.35, f"yanlış alarm {tarama['yanlis_alarm']:.2f}"

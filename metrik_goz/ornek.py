@@ -263,7 +263,7 @@ SAHNELER = {"duz": _duz, "egik": _egik, "gecit": _gecit}
 PANEL_SAHNELERI = ["duz", "egik"]
 
 
-def ornek_sahne(ad: str = "tezgah", *, tohum: int = 0) -> dict:
+def ornek_sahne(ad: str = "duz", *, tohum: int = 0) -> dict:
     """Adı verilen örnek sahneyi üretir; doğru cevabı da birlikte döner."""
     if ad not in SAHNELER:
         raise KeyError(f"Bilinmeyen örnek '{ad}'. Seçenekler: {sorted(SAHNELER)}")

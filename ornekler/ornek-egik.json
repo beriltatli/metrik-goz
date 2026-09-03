@@ -1,0 +1,57 @@
+{
+  "ad": "ornek-egik.png",
+  "aciklama": "Aynı sahne, ama fotoğraf eğik çekilmiş. Tek uzunluktan kurulan ölçek perspektifi düzeltemez; sistemin bunu fark edip fark etmediğine bak.",
+  "referans": {
+    "tur": "olcek",
+    "ad": "1_tl",
+    "uzunluk_mm": 26.15
+  },
+  "varsayilan_olcum": "kutu",
+  "gercek": {
+    "en": {
+      "deger": 146.7,
+      "birim": "mm",
+      "aciklama": "telefonun uzun kenarı"
+    },
+    "boy": {
+      "deger": 71.5,
+      "birim": "mm",
+      "aciklama": "telefonun kısa kenarı"
+    },
+    "alan": {
+      "deger": 104.89049999999999,
+      "birim": "cm²",
+      "aciklama": "telefonun yüzü"
+    }
+  },
+  "ipucu": {
+    "referans": [
+      [
+        608.43,
+        135.66
+      ],
+      [
+        691.57,
+        135.66
+      ]
+    ],
+    "kutu": [
+      [
+        744.13,
+        718.25
+      ],
+      [
+        756.11,
+        361.03
+      ],
+      [
+        543.89,
+        361.03
+      ],
+      [
+        555.87,
+        718.25
+      ]
+    ]
+  }
+}

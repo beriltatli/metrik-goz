@@ -599,7 +599,9 @@ def uygulama_kur(*, depo: Depo | None = None) -> Flask:
                         for ad, (mm, aciklama) in referans.BILINEN_UZUNLUKLAR.items()],
             nesneler={ad: list(b) for ad, b in referans.BILINEN_NESNELER.items()},
             sigmalar=referans.TIPIK_SIGMA_PX,
-            ornekler=list(ornek.SAHNELER),
+            # Panel tek akış sürüyor (nesnenin ölçüsü); geçit sahnesi o
+            # akışa uymadığı için düğmelerde yok — CLI ve API'de duruyor.
+            ornekler=list(ornek.PANEL_SAHNELERI),
         )
 
     @uygulama.get("/gorsel/<kimlik>")
@@ -621,7 +623,7 @@ def uygulama_kur(*, depo: Depo | None = None) -> Flask:
     @uygulama.post("/api/ornek")
     def ornek_uret():
         cv2 = _cv2()
-        ad = str((request.get_json(silent=True) or {}).get("ad", "tezgah"))
+        ad = str((request.get_json(silent=True) or {}).get("ad", "duz"))
         try:
             sahne = ornek.ornek_sahne(ad)
         except KeyError as hata:
