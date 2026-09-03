@@ -38,6 +38,7 @@ MC_ARALIK = (50, 4000)
 GECIT_MC_TAVAN = 120                       # geçit örneği pahalı; MC'yi burada kes
 
 OLCUM_TURLERI = {
+    "kutu": dict(en_az=4, en_cok=4, birim="mm"),
     "mesafe": dict(en_az=2, en_cok=2, birim="mm"),
     "uzunluk": dict(en_az=2, en_cok=EN_FAZLA_NOKTA, birim="mm"),
     "alan": dict(en_az=3, en_cok=EN_FAZLA_NOKTA, birim="cm²"),
@@ -183,10 +184,59 @@ def _noktalar(ham, ad: str, en_az: int, en_cok: int, boyut: tuple[int, int]) -> 
     return p
 
 
-def _referansi_coz(govde: dict, gorsel: Gorsel) -> tuple[np.ndarray, np.ndarray, float, str]:
-    """(dunya_mm, resim_px, varsayılan_sigma_px, etiket)."""
+@dataclass
+class RefModeli:
+    """
+    Referansın hangi modeli kurduğu.
+
+    İki aile var ve farkları ölçümün ne kadarına güvenebileceğini belirliyor:
+
+    benzerlik  — tek bir bilinen UZUNLUK (paranın çapı). Ölçek biliniyor,
+                 perspektif DÜZELTİLMİYOR. İki gözlem noktası var; kalan iki
+                 köşe onlardan türetiliyor, bu yüzden homografiyi `kur_fn`
+                 kuruyor: hangi sayıların gerçekten gözlem olduğunu model bilir.
+    projektif  — dört nokta (dikdörtgen köşeleri ya da ArUco). Perspektif
+                 düzeltiliyor.
+    """
+
+    tur: str
+    aile: str
+    resim: np.ndarray                       # gözlenen noktalar
+    sigma: float
+    etiket: str
+    dunya: np.ndarray | None = None
+    kur_fn: object | None = None
+
+    def kur(self) -> Homografi:
+        if self.kur_fn is not None:
+            return self.kur_fn(self.resim)
+        return Homografi.kur(self.dunya, self.resim)
+
+
+def _referansi_coz(govde: dict, gorsel: Gorsel) -> RefModeli:
     ref = govde.get("referans") or {}
-    tur = ref.get("tur", "aruco")
+    tur = ref.get("tur", "olcek")
+    boyut = (gorsel.yukseklik, gorsel.genislik)
+
+    if tur == "olcek":
+        # En basit yol: nesnenin yanındaki paranın iki ucunu tıkla, çapını yaz.
+        uzunluk = ref.get("uzunluk_mm")
+        ad = ref.get("ad")
+        if uzunluk is None and ad:
+            if ad not in referans.BILINEN_UZUNLUKLAR:
+                raise IstekHatasi(f"Bilinmeyen referans '{ad}'.")
+            uzunluk = referans.BILINEN_UZUNLUKLAR[ad][0]
+        uzunluk = _sayi({"uzunluk_mm": uzunluk}, "uzunluk_mm", zorunlu=True,
+                        en_az=0.1, en_cok=1_000_000.0)
+        noktalar = _noktalar(ref.get("noktalar"), "referans uçları", 2, 2, boyut)
+        etiket = (referans.BILINEN_UZUNLUKLAR[ad][1] if ad in referans.BILINEN_UZUNLUKLAR
+                  else f"{uzunluk:g} mm bilinen uzunluk")
+        return RefModeli(
+            tur=tur, aile="benzerlik", resim=noktalar,
+            sigma=referans.TIPIK_SIGMA_PX["elle"],
+            etiket=f"{etiket} · {uzunluk:g} mm",
+            kur_fn=lambda g, u=uzunluk: Homografi.olcekten(g[0], g[1], u),
+        )
 
     if tur == "aruco":
         kenar = _sayi(ref, "kenar_mm", zorunlu=True, en_az=1.0, en_cok=100_000.0)
@@ -200,7 +250,9 @@ def _referansi_coz(govde: dict, gorsel: Gorsel) -> tuple[np.ndarray, np.ndarray,
         else:
             _, resim, kimlik = _aruco_bul(gorsel, kenar, sozluk)
             etiket = f"ArUco #{kimlik} · {kenar:g} mm"
-        return referans.kare_dunya(kenar), resim, referans.TIPIK_SIGMA_PX["aruco"], etiket
+        return RefModeli(tur=tur, aile="projektif", dunya=referans.kare_dunya(kenar),
+                         resim=resim, sigma=referans.TIPIK_SIGMA_PX["aruco"],
+                         etiket=etiket)
 
     if tur == "kare":
         kenar = _sayi(ref, "kenar_mm", zorunlu=True, en_az=1.0, en_cok=100_000.0)
@@ -222,9 +274,9 @@ def _referansi_coz(govde: dict, gorsel: Gorsel) -> tuple[np.ndarray, np.ndarray,
     else:
         raise IstekHatasi(f"Bilinmeyen referans türü '{tur}'.")
 
-    resim = _noktalar(ref.get("koseler"), "referans köşeleri", 4, 4,
-                      (gorsel.yukseklik, gorsel.genislik))
-    return dunya, resim, referans.TIPIK_SIGMA_PX["elle"], etiket
+    resim = _noktalar(ref.get("koseler"), "referans köşeleri", 4, 4, boyut)
+    return RefModeli(tur=tur, aile="projektif", dunya=dunya, resim=resim,
+                     sigma=referans.TIPIK_SIGMA_PX["elle"], etiket=etiket)
 
 
 def _aruco_bul(gorsel: Gorsel, kenar_mm: float, sozluk: str):
