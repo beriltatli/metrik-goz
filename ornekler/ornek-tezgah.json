@@ -1,0 +1,51 @@
+{
+  "ad": "ornek-tezgah.png",
+  "aciklama": "Mutfak tezgâhı: 100 mm ArUco referansı, A ve B hedefleri, kenarları çizili dikdörtgen.",
+  "referans": {
+    "tur": "aruco",
+    "kenar_mm": 100.0
+  },
+  "varsayilan_olcum": "mesafe",
+  "gercek": {
+    "mesafe": {
+      "deger": 410.0,
+      "birim": "mm",
+      "aciklama": "A ve B merkezleri arası"
+    },
+    "alan": {
+      "deger": 336.0,
+      "birim": "cm²",
+      "aciklama": "çizili dikdörtgen (240×140 mm)"
+    }
+  },
+  "ipucu": {
+    "mesafe": [
+      [
+        734.0,
+        608.0
+      ],
+      [
+        650.0,
+        283.0
+      ]
+    ],
+    "alan": [
+      [
+        594.36,
+        543.27
+      ],
+      [
+        584.39,
+        347.92
+      ],
+      [
+        449.51,
+        347.92
+      ],
+      [
+        471.12,
+        543.27
+      ]
+    ]
+  }
+}

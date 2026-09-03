@@ -1,0 +1,69 @@
+{
+  "ad": "ornek-gecit.png",
+  "aciklama": "Enkaz koridoru: 200 mm ArUco referansı, ortada daralan serbest alan. Serbest alanın çevresini çokgen olarak çiz.",
+  "referans": {
+    "tur": "aruco",
+    "kenar_mm": 200.0
+  },
+  "varsayilan_olcum": "gecit",
+  "gercek": {
+    "gecit": {
+      "deger": 520.0,
+      "birim": "mm",
+      "aciklama": "koridorun en dar yeri"
+    }
+  },
+  "ipucu": {
+    "gecit": [
+      [
+        863.22,
+        932.96
+      ],
+      [
+        881.33,
+        610.96
+      ],
+      [
+        804.77,
+        610.96
+      ],
+      [
+        815.78,
+        272.13
+      ],
+      [
+        900.39,
+        272.13
+      ],
+      [
+        928.39,
+        -225.76
+      ],
+      [
+        471.61,
+        -225.76
+      ],
+      [
+        499.61,
+        272.13
+      ],
+      [
+        584.22,
+        272.13
+      ],
+      [
+        595.23,
+        610.96
+      ],
+      [
+        518.67,
+        610.96
+      ],
+      [
+        536.78,
+        932.96
+      ]
+    ]
+  },
+  "ayak_izi_mm": 480.0
+}

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>metrik-göz paneli</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📐</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}">
+</head>
+<body>
+
+<header class="ust">
+  <div class="marka">metrik<span>-göz</span></div>
+  <p class="slogan">Tek fotoğraftan gerçek ölçü — ve dürüst bir hata payı.</p>
+  <div class="ust-sag">
+    {% for ad in ornekler %}
+      <button class="dugme" data-ornek="{{ ad }}">örnek: {{ ad }}</button>
+    {% endfor %}
+    <span class="surum">v{{ surum }}</span>
+  </div>
+</header>
+
+<main>
+  <!-- ---------------------------------------------------------- tuval -->
+  <section class="tuval-alani">
+    <div class="arac-cubugu">
+      <button class="dugme secili" id="mod-referans">1 · Referans köşeleri</button>
+      <button class="dugme" id="mod-olcum">2 · Ölçüm noktaları</button>
+      <div class="ayirac"></div>
+      <button class="dugme" id="geri-al" title="Son noktayı sil (⌘Z)">Geri al</button>
+      <button class="dugme" id="temizle" title="Aktif moddaki noktaları sil">Temizle</button>
+      <div class="ayirac"></div>
+      <button class="dugme" id="sigdir" title="Görüntüyü çerçeveye sığdır (F)">Sığdır</button>
+      <button class="dugme" id="yakinlas">+</button>
+      <button class="dugme" id="uzaklas">−</button>
+      <span class="rozet" id="olcek-rozeti">%100</span>
+      <div class="esnek"></div>
+      <button class="dugme" id="dosya-sec">Görüntü seç…</button>
+      <input type="file" id="dosya" accept="image/*" hidden>
+    </div>
+
+    <div class="tuval-sarmal" id="tuval-sarmal">
+      <canvas id="tuval"></canvas>
+      <canvas id="buyutec" width="132" height="132"></canvas>
+      <div class="birak-katmani" id="birak">
+        <div class="birak-cerceve"></div>
+        <h2>Görseli buraya sürükle</h2>
+        <p>
+          Ya da <b>Görüntü seç…</b> düğmesini kullan, panoya kopyaladığın bir görseli
+          <code>⌘V</code> ile yapıştır. Elinde fotoğraf yoksa sağ üstteki örnek
+          sahnelerden birini aç — onlarda doğru cevabı da biliyoruz.
+        </p>
+      </div>
+    </div>
+
+    <div class="alt-cubuk">
+      <span id="durum-metni">Görüntü bekleniyor.</span>
+      <div class="esnek"></div>
+      <span id="imlec-px"></span>
+      <span id="imlec-mm"></span>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------- yan panel -->
+  <aside class="yan">
+
+    <div class="bolum">
+      <h3 class="bolum-basligi">1 · Referans <span class="esnek"></span>
+        <span class="rozet" id="ref-rozeti">yok</span></h3>
+      <div class="segment" id="ref-turleri">
+        <button class="dugme secili" data-ref="aruco">ArUco</button>
+        <button class="dugme" data-ref="kare">Kare</button>
+        <button class="dugme" data-ref="dikdortgen">Dikdörtgen</button>
+        <button class="dugme" data-ref="nesne">Bilinen nesne</button>
+      </div>
+
+      <div id="ref-aruco">
+        <div class="satir">
+          <label for="aruco-kenar">Kenar (mm)</label>
+          <input type="number" id="aruco-kenar" value="100" min="1" step="1">
+        </div>
+        <div class="satir">
+          <label for="aruco-sozluk">Sözlük</label>
+          <select id="aruco-sozluk">
+            <option>DICT_4X4_50</option><option>DICT_4X4_100</option>
+            <option>DICT_5X5_100</option><option>DICT_6X6_250</option>
+            <option>DICT_APRILTAG_36h11</option>
+          </select>
+        </div>
+        <button class="dugme" id="aruco-bul" style="width:100%;justify-content:center">
+          İşareti otomatik bul
+        </button>
+        <p class="ipucu">Köşe okuması alt piksel doğrulukta; belirsizlik elle
+          tıklamaya göre yaklaşık dört kat düşük.</p>
+      </div>
+
+      <div id="ref-kare" hidden>
+        <div class="satir">
+          <label for="kare-kenar">Kenar (mm)</label>
+          <input type="number" id="kare-kenar" value="100" min="1" step="1">
+        </div>
+      </div>
+
+      <div id="ref-dikdortgen" hidden>
+        <div class="satir">
+          <label for="dik-gen">Genişlik (mm)</label>
+          <input type="number" id="dik-gen" value="297" min="1" step="1">
+        </div>
+        <div class="satir">
+          <label for="dik-yuk">Yükseklik (mm)</label>
+          <input type="number" id="dik-yuk" value="210" min="1" step="1">
+        </div>
+      </div>
+
+      <div id="ref-nesne" hidden>
+        <div class="satir">
+          <label for="nesne-ad">Nesne</label>
+          <select id="nesne-ad">
+            {% for ad, boyut in nesneler.items() %}
+              <option value="{{ ad }}">{{ ad }} — {{ boyut[0] }}×{{ boyut[1] }} mm</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <p class="ipucu" id="ref-ipucu"></p>
+    </div>
+
+    <div class="bolum">
+      <h3 class="bolum-basligi">2 · Ölçüm <span class="esnek"></span>
+        <span class="rozet" id="olcum-rozeti">0 nokta</span></h3>
+      <div class="segment" id="olcum-turleri">
+        <button class="dugme secili" data-olcum="mesafe">Mesafe</button>
+        <button class="dugme" data-olcum="uzunluk">Uzunluk</button>
+        <button class="dugme" data-olcum="alan">Alan</button>
+        <button class="dugme" data-olcum="gecit">En dar geçit</button>
+      </div>
+      <p class="ipucu" id="olcum-ipucu"></p>
+
+      <div id="gecit-ayarlari" hidden>
+        <div class="satir">
+          <label for="ayak-izi">Ayak izi (mm)</label>
+          <input type="number" id="ayak-izi" value="480" min="0" step="10">
+        </div>
+        <div class="satir">
+          <label for="gecit-pay">Emniyet payı</label>
+          <input type="number" id="gecit-pay" value="0" min="0" step="10">
+        </div>
+      </div>
+    </div>
+
+    <div class="bolum">
+      <h3 class="bolum-basligi">3 · Belirsizlik</h3>
+      <div class="satir">
+        <label for="yontem">Yöntem</label>
+        <select id="yontem">
+          <option value="monte_carlo">Monte Carlo (referans doğru)</option>
+          <option value="analitik">Analitik (hızlı)</option>
+        </select>
+      </div>
+      <div class="satir">
+        <label for="sigma">σ köşe (px)</label>
+        <input type="number" id="sigma" value="0.4" min="0.01" max="20" step="0.1">
+      </div>
+      <details class="gelismis">
+        <summary>Gelişmiş</summary>
+        <div>
+          <div class="satir">
+            <label for="guven">Güven</label>
+            <select id="guven">
+              <option value="0.68">%68</option>
+              <option value="0.9">%90</option>
+              <option value="0.95" selected>%95</option>
+              <option value="0.99">%99</option>
+            </select>
+          </div>
+          <div class="satir">
+            <label for="mc-n">MC örneği</label>
+            <input type="number" id="mc-n" value="400" min="50" max="4000" step="50">
+          </div>
+          <div class="satir">
+            <label for="adim">Kesit adımı</label>
+            <input type="number" id="adim" value="20" min="1" step="5">
+          </div>
+          <div class="satir">
+            <label for="ornek-mm">Tarama (mm)</label>
+            <input type="number" id="ornek-mm" value="5" min="0.5" step="1">
+          </div>
+          <p class="ipucu">Son iki alan yalnız geçit ölçümünde kullanılıyor:
+            eksene dik kesitlerin sıklığı ve kesit üzerindeki örnekleme adımı.
+            Örnekleme adımı ölçüm çözünürlüğünü belirliyor.</p>
+        </div>
+      </details>
+    </div>
+
+    <div class="bolum">
+      <button class="dugme birincil" id="calistir" disabled>Çalıştır</button>
+      <p class="ipucu" id="calistir-ipucu">Önce referans köşeleri, sonra ölçüm noktaları.</p>
+    </div>
+
+    <div class="bolum" id="sonuc-bolumu">
+      <h3 class="bolum-basligi">Sonuç <span class="esnek"></span>
+        <span class="rozet" id="sure-rozeti" hidden></span></h3>
+      <div id="sonuc-govde">
+        <p class="sonuc-bos">Henüz ölçüm yok. Çalıştır'a bastığında sonuç,
+          hata payı ve uyarılar burada görünecek.</p>
+      </div>
+    </div>
+
+  </aside>
+</main>
+
+<script id="sunucu-verisi" type="application/json">
+  {{ {"nesneler": nesneler, "sigmalar": sigmalar, "ornekler": ornekler} | tojson }}
+</script>
+<script src="{{ url_for('static', filename='panel.js') }}"></script>
+</body>
+</html>

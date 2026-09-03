@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "metrik-goz"
+version = "0.1.0"
+description = "Tek fotoğraftan gerçek ölçü, dürüst hata payıyla"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+goruntu = ["opencv-python>=4.8"]
+grafik = ["matplotlib>=3.7"]
+web = ["flask>=3.0", "opencv-python>=4.8"]
+gelistirme = ["pytest>=7.4", "opencv-python>=4.8", "matplotlib>=3.7", "flask>=3.0"]
+
+[project.scripts]
+metrik-goz = "metrik_goz.cli:ana"
+
+[tool.setuptools.packages.find]
+include = ["metrik_goz*"]
+
+[tool.setuptools.package-data]
+metrik_goz = ["web/templates/*.html", "web/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["testler"]
