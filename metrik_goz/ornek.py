@@ -107,7 +107,7 @@ def _aruco_bas(tuval: np.ndarray, H: np.ndarray, kenar_mm: float,
     yapistir(isaret, yari)
 
 
-def _disk_bas(tuval, H, merkez_mm, yaricap_mm, renk, etiket=None):
+def _disk_bas(tuval, H, merkez_mm, yaricap_mm, renk, etiket=None, *, nisan=False):
     """Düzlem üzerinde dairesel bir nesne (perspektifte elips olur)."""
     import cv2
 
@@ -119,62 +119,98 @@ def _disk_bas(tuval, H, merkez_mm, yaricap_mm, renk, etiket=None):
 
     h0 = np.append(merkez_mm, 1.0) @ H.T
     m = (h0[:2] / h0[2]).astype(int)
-    cv2.drawMarker(tuval, tuple(m), (255, 255, 255), cv2.MARKER_CROSS, 18, 2, cv2.LINE_AA)
+    if nisan:
+        cv2.drawMarker(tuval, tuple(m), (255, 255, 255), cv2.MARKER_CROSS, 18, 2,
+                       cv2.LINE_AA)
     if etiket:
         cv2.putText(tuval, etiket, (m[0] + 14, m[1] - 12), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (255, 255, 255), 2, cv2.LINE_AA)
     return m.astype(float)
 
 
-def _tezgah(tohum: int):
-    """Mutfak senaryosu: iki nesne arası mesafe ve bir dikdörtgenin alanı."""
+# Telefon: ölçülecek nesne. Boyutları referans listesinde YOK — kullanıcının
+# gerçekten bilmediği bir şeyi ölçüyor olması demonun bütün anlamı.
+TELEFON_EN, TELEFON_BOY = 146.7, 71.5
+PARA_MM = 26.15                      # 1 TL, çap
+
+
+def _en_genis_capin_uclari(H: np.ndarray, merkez_mm, yaricap_mm: float):
+    """
+    Dairenin görüntüdeki EN GENİŞ yerinin iki ucu.
+
+    Yuvarlak referansın perspektifteki izdüşümü elips; hangi çapı ölçtüğün fark
+    eder. En geniş yer (elipsin büyük ekseni) kısalmaya uğramamış olan çaptır,
+    yani doğru cevabı veren tek çap. Kullanıcı da doğal olarak oradan ölçer;
+    ipucu noktalarını oraya koyuyoruz.
+    """
+    aci = np.linspace(0, np.pi, 720, endpoint=False)
+    yon = np.column_stack([np.cos(aci), np.sin(aci)])
+    a = _dunyayi_izdusur(H, np.asarray(merkez_mm) + yaricap_mm * yon)
+    b = _dunyayi_izdusur(H, np.asarray(merkez_mm) - yaricap_mm * yon)
+    k = int(np.argmax(np.hypot(*(a - b).T)))
+    return np.array([a[k], b[k]])
+
+
+def _masa(egim_derece: float, ad: str, aciklama: str):
+    """Masaya konmuş bir telefon ve yanındaki 1 TL — panelin asıl senaryosu."""
     import cv2
 
-    boyut = (900, 1400)
-    sahne = sahne_kur(referans_boyut_mm=100.0, odak_px=1150.0, boyut_px=boyut,
-                      mesafe_mm=1250.0, egim_derece=28.0, azimut_derece=0.0)
+    boyut = (900, 1300)
+    sahne = sahne_kur(referans_boyut_mm=PARA_MM, odak_px=1500.0, boyut_px=boyut,
+                      mesafe_mm=520.0, egim_derece=egim_derece, azimut_derece=0.0)
     H = sahne.H_gercek
     X, Y, gecerli = _dunya_haritasi(H, boyut)
 
     tuval = np.full((*boyut, 3), _ZEMIN, np.uint8)
-    masa = gecerli & (np.abs(X) < 900) & (np.abs(Y) < 620)
+    masa = gecerli & (np.abs(X) < 420) & (np.abs(Y) < 300)
     tuval[masa] = _MASA
-    izgara = masa & ((np.minimum(X % 100, 100 - X % 100) < 1.6) |
-                     (np.minimum(Y % 100, 100 - Y % 100) < 1.6))
-    tuval[izgara] = _IZGARA
+    doku = masa & (np.minimum(Y % 90, 90 - Y % 90) < 1.2)      # ahşap çizgileri
+    tuval[doku] = _IZGARA
 
-    _aruco_bas(tuval, H, 100.0)
+    # Telefon: köşeleri keskin, tıklanabilir
+    merkez = np.array([-40.0, 0.0])
+    kose_mm = np.array([[-TELEFON_EN / 2, -TELEFON_BOY / 2],
+                        [TELEFON_EN / 2, -TELEFON_BOY / 2],
+                        [TELEFON_EN / 2, TELEFON_BOY / 2],
+                        [-TELEFON_EN / 2, TELEFON_BOY / 2]]) + merkez
+    kose_px = _dunyayi_izdusur(H, kose_mm)
+    cv2.fillPoly(tuval, [kose_px.astype(np.int32)], (46, 44, 42), cv2.LINE_AA)
+    ekran = _dunyayi_izdusur(H, (kose_mm - merkez) * 0.9 + merkez)
+    cv2.fillPoly(tuval, [ekran.astype(np.int32)], (28, 26, 25), cv2.LINE_AA)
 
-    # Hedefler ilan edilen çalışma bölgesinin içinde: referans kutusunun ~1,5
-    # katı uzaklıkta. Daha uzağa koymak demoyu "güvenme" uyarısıyla açardı.
-    a_mm, b_mm = np.array([-210.0, -40.0]), np.array([190.0, 50.0])
-    a_px = _disk_bas(tuval, H, a_mm, 38.0, _HEDEF, "A")
-    b_px = _disk_bas(tuval, H, b_mm, 30.0, _HEDEF2, "B")
-
-    # Alanı bilinen dikdörtgen
-    dikd = np.array([[-120.0, 120.0], [120.0, 120.0], [120.0, 260.0], [-120.0, 260.0]])
-    h = np.hstack([dikd, np.ones((4, 1))]) @ H.T
-    dikd_px = h[:, :2] / h[:, 2:3]
-    cv2.polylines(tuval, [dikd_px.astype(np.int32)], True, (60, 60, 60), 2, cv2.LINE_AA)
+    # 1 TL: telefonun hemen yanında, masanın üstünde
+    para_merkez = np.array([110.0, 0.0])
+    _disk_bas(tuval, H, para_merkez, PARA_MM / 2, (86, 158, 196))
+    _disk_bas(tuval, H, para_merkez, PARA_MM / 2 * 0.72, (104, 178, 214))
+    para_uclari = _en_genis_capin_uclari(H, para_merkez, PARA_MM / 2)
 
     return dict(
         goruntu=tuval,
-        ad="ornek-tezgah.png",
-        aciklama="Mutfak tezgâhı: 100 mm ArUco referansı, A ve B hedefleri, "
-                 "kenarları çizili dikdörtgen.",
-        referans=dict(tur="aruco", kenar_mm=100.0),
-        varsayilan_olcum="mesafe",
+        ad=f"ornek-{ad}.png",
+        aciklama=aciklama,
+        referans=dict(tur="olcek", ad="1_tl", uzunluk_mm=PARA_MM),
+        varsayilan_olcum="kutu",
         gercek={
-            "mesafe": dict(deger=float(np.hypot(*(b_mm - a_mm))), birim="mm",
-                           aciklama="A ve B merkezleri arası"),
-            "alan": dict(deger=float(240.0 * 140.0 / 100.0), birim="cm²",
-                         aciklama="çizili dikdörtgen (240×140 mm)"),
+            "en": dict(deger=TELEFON_EN, birim="mm", aciklama="telefonun uzun kenarı"),
+            "boy": dict(deger=TELEFON_BOY, birim="mm", aciklama="telefonun kısa kenarı"),
+            "alan": dict(deger=TELEFON_EN * TELEFON_BOY / 100.0, birim="cm²",
+                         aciklama="telefonun yüzü"),
         },
-        ipucu=dict(
-            mesafe=[a_px.tolist(), b_px.tolist()],
-            alan=dikd_px.tolist(),
-        ),
+        ipucu=dict(referans=para_uclari.tolist(), kutu=kose_px.tolist()),
     )
+
+
+def _duz(tohum: int):
+    return _masa(1.5, "duz",
+                 "Masaya konmuş telefon ve yanında 1 TL. Fotoğraf neredeyse tam "
+                 "tepeden çekilmiş — bu, basit ölçek modelinin doğru çalıştığı hâl.")
+
+
+def _egik(tohum: int):
+    return _masa(26.0, "egik",
+                 "Aynı sahne, ama fotoğraf eğik çekilmiş. Tek uzunluktan kurulan "
+                 "ölçek perspektifi düzeltemez; sistemin bunu fark edip fark "
+                 "etmediğine bak.")
 
 
 def _gecit(tohum: int):
@@ -196,7 +232,7 @@ def _gecit(tohum: int):
 
     _aruco_bas(tuval, H, 200.0, isaret_id=3)
 
-    # Serbest koridorun köşeleri: panelde "çokgeni buraya çiz" ipucu olarak kullanılıyor
+    # Serbest koridorun köşeleri: "çokgeni buraya çiz" ipucu
     cokgen_mm = np.array([
         [-1400, -GENIS_MM / 2], [-420, -GENIS_MM / 2], [-420, -DAR_MM / 2],
         [420, -DAR_MM / 2], [420, -GENIS_MM / 2], [1400, -GENIS_MM / 2],
@@ -221,7 +257,10 @@ def _gecit(tohum: int):
     )
 
 
-SAHNELER = {"tezgah": _tezgah, "gecit": _gecit}
+SAHNELER = {"duz": _duz, "egik": _egik, "gecit": _gecit}
+
+# Panelin gösterdiği örnekler: hepsi "nesnenin ölçüsü" akışına uyuyor.
+PANEL_SAHNELERI = ["duz", "egik"]
 
 
 def ornek_sahne(ad: str = "tezgah", *, tohum: int = 0) -> dict:

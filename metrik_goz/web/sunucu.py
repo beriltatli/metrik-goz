@@ -301,33 +301,81 @@ def _maske_kur(noktalar: np.ndarray, boyut: tuple[int, int]) -> np.ndarray:
     return maske > 127
 
 
-def _uyarilar(h: Homografi, noktalar: np.ndarray | None, sonuc: belirsizlik.Olcum,
-              ref_tur: str, boyut: tuple[int, int] | None = None,
-              kose_sayisi: int = 4, sigma_px: float = 0.4) -> list[dict]:
-    uyari = []
-    if noktalar is not None and len(noktalar) and boyut is not None:
-        yuk, gen = boyut
-        disarida = int(np.sum((noktalar[:, 0] < -2) | (noktalar[:, 0] > gen + 2) |
-                              (noktalar[:, 1] < -2) | (noktalar[:, 1] > yuk + 2)))
-        if disarida:
+def _uyarilar(h: Homografi, noktalar: np.ndarray, ref: RefModeli,
+              en_kotu_bagil: float, boyut: tuple[int, int],
+              sigma_px: float, kutu_sonucu=None) -> list[dict]:
+    """
+    Ölçümün nerede sessizce yanılabileceğini söyleyen liste, en tehlikelisi başta.
+    Kullanıcı listenin tamamını okumayacak; ilk satırı okuyacak.
+
+    Uyarıların eşikleri modele göre değişiyor, çünkü iki modelin zaafları farklı:
+
+      benzerlik — tek zaafı perspektif. Nesnenin referanstan UZAK olması tek
+                  başına hata üretmez; ölçek her yerde aynıdır. Uzaklık ancak
+                  perspektif varsa hatayı büyütür, o yüzden ikisini tek uyarıda
+                  birleştiriyoruz. `dogrulama.benzerlik_taramasi` bunu ölçüyor:
+                  tam tepeden çekimde para nerede olursa olsun hata sıfır.
+      projektif — homografi referans köşelerine oturtuluyor; ondan uzaklaştıkça
+                  parametre hatası büyüyerek taşınıyor. Orada uzaklığın kendisi
+                  bir risk.
+    """
+    uyari: list[dict] = []
+    yuk, gen = boyut
+    en_uzak = max(float(h.duzlem_disi_uyarisi(n)) for n in noktalar)
+    ref_px = float(np.hypot(*(ref.resim[1] - ref.resim[0]))) if len(ref.resim) >= 2 else 0.0
+
+    # 1) Perspektif — benzerlik modelinin tek gerçek zaafı ve en pahalı hata.
+    if ref.aile == "benzerlik":
+        sapma = kutu_sonucu.dikdortgenlik if kutu_sonucu is not None else None
+        uzakta = en_uzak > 1.5
+        if sapma is not None and sapma > 0.06:
+            uyari.append(dict(seviye="yuksek", metin=(
+                f"Karşılıklı kenarlar %{_tr(sapma * 100)} farklı ölçülüyor — fotoğraf "
+                f"belirgin biçimde eğik çekilmiş. Tek uzunluktan kurulan ölçek "
+                f"perspektifi DÜZELTMEZ; bu eğimde hata %10'u geçebilir ve aşağıdaki "
+                f"hata payı bunu kapsamıyor. Kamerayı nesnenin tam üstünden düz tut, "
+                f"ya da referans olarak dikdörtgen bir şey (kart, A4) kullanıp dört "
+                f"köşesini işaretle — o zaman perspektifi düzeltebilirim." +
+                (" Referansı nesnenin üstüne koymak da hatayı yarıya indirir."
+                 if uzakta else ""))))
+        elif sapma is not None and sapma > 0.02:
             uyari.append(dict(seviye="orta", metin=(
-                f"{disarida} nokta kadrajın dışında. Geometri orada da tanımlı ama "
-                f"görüntüde karşılığı yok — geçit ölçümünde maske çerçeveden kırpılır.")))
-    if noktalar is not None and len(noktalar):
-        en_uzak = max(float(h.duzlem_disi_uyarisi(n)) for n in noktalar)
+                f"Karşılıklı kenarlar %{_tr(sapma * 100)} farklı ölçülüyor: hafif bir "
+                f"perspektif var ve hata payı bunu kapsamıyor." +
+                (" Referans nesneden uzakta; üstüne koymak hatayı yaklaşık yarıya "
+                 "indirir." if uzakta else " Kamerayı biraz daha dik tutmak düzeltir."))))
+        else:
+            uyari.append(dict(seviye="bilgi", metin=(
+                "Tek uzunluktan ölçek kuruldu: perspektif düzeltilmiyor. Nesnenin "
+                "karşılıklı kenarları eşit ölçüldüğü için fotoğraf yeterince dik "
+                "görünüyor — eğik çekimde bu sayı büyür ve uyarı çıkar."
+                if kutu_sonucu is not None else
+                "Tek uzunluktan ölçek kuruldu: perspektif düzeltilmiyor. Fotoğraf "
+                "nesnenin tam üstünden çekildiyse sonuç doğru.")))
+    else:
         if en_uzak > 2.0:
             uyari.append(dict(seviye="yuksek", metin=(
-                f"Ölçüm referansın {_tr(en_uzak)} kutu boyu dışında. Bu bölgede hata "
+                f"Ölçüm, referansın {_tr(en_uzak)} kutu boyu dışında. Bu bölgede hata "
                 f"hızla büyüyor — referansı ölçtüğün şeye yaklaştır.")))
         elif en_uzak > 1.0:
             uyari.append(dict(seviye="orta", metin=(
-                f"Ölçüm referansın {_tr(en_uzak)} kutu boyu dışında; "
-                f"referansa yaklaştırmak hatayı düşürür.")))
-    if kose_sayisi <= 4:
-        uyari.append(dict(seviye="bilgi", metin=(
-            "Dört köşe, sekiz parametre: serbestlik derecesi sıfır, bu yüzden "
-            "yeniden izdüşüm hatası yapısal olarak sıfır çıkıyor ve uyum kalitesi "
-            "hakkında bilgi vermiyor. Belirsizlik köşe gürültüsünden geliyor.")))
+                f"Ölçüm, referansın {_tr(en_uzak)} kutu boyu dışında; yaklaştırmak "
+                f"hatayı düşürür.")))
+
+    # 2) Referansın görüntüdeki boyu — belirsizliğin çoğu genelde buradan gelir.
+    if 0 < ref_px < 150 and ref.aile == "benzerlik":
+        uyari.append(dict(seviye="orta", metin=(
+            f"Referans görüntüde yalnız {ref_px:.0f} piksel uzunluğunda. Ölçek "
+            f"hatası kabaca σ√2 / {ref_px:.0f} px, yani hata payının çoğu buradan "
+            f"geliyor. Daha büyük bir referans (kart, A4) ya da daha yakın çekim "
+            f"aralığı belirgin biçimde daraltır.")))
+
+    # 3) Kadraj ve uyum
+    disarida = int(np.sum((noktalar[:, 0] < -2) | (noktalar[:, 0] > gen + 2) |
+                          (noktalar[:, 1] < -2) | (noktalar[:, 1] > yuk + 2)))
+    if disarida:
+        uyari.append(dict(seviye="orta",
+                          metin=f"{disarida} nokta kadrajın dışında."))
     if h.rms_px > 1.5:
         uyari.append(dict(seviye="yuksek", metin=(
             f"Yeniden izdüşüm hatası {_tr(h.rms_px, 2)} px — referans köşeleri iyi "
@@ -335,17 +383,20 @@ def _uyarilar(h: Homografi, noktalar: np.ndarray | None, sonuc: belirsizlik.Olcu
     if not h.yakinsadi:
         uyari.append(dict(seviye="yuksek",
                           metin="Homografi çözücüsü yakınsamadı; sonuca güvenme."))
-    if sonuc.bagil_hata > 0.05:
+    if en_kotu_bagil > 0.05:
         uyari.append(dict(seviye="orta", metin=(
-            f"Bağıl belirsizlik %{_tr(sonuc.bagil_hata * 100)} — ilan edilen çalışma "
+            f"Bağıl belirsizlik %{_tr(en_kotu_bagil * 100)} — ilan edilen çalışma "
             f"bölgesinin (%3) dışındasın.")))
-    if ref_tur in ("kare", "dikdortgen", "nesne"):
-        uyari.append(dict(seviye="bilgi", metin=(
-            f"Köşeler elle işaretlendi; köşe gürültüsü {_tr(sigma_px, 2)} px varsayıldı. "
-            f"ArUco ile bu değer 0,4 px'e, belirsizlik de yaklaşık dörtte birine iner.")))
+
+    # 4) Her zaman geçerli olan sınırlar
     uyari.append(dict(seviye="bilgi", metin=(
-        "Düzlem varsayımı: ölçülen her şey referansla aynı düzlemde olmalı. "
-        "Raftaki kutuyu tezgâhtaki kartla ölçemezsin.")))
+        "ArUco köşeleri alt piksel doğrulukta okundu." if ref.tur == "aruco" else
+        f"Noktalar elle işaretlendi; tıklama gürültüsü {_tr(sigma_px, 2)} px "
+        f"varsayıldı. Büyüteçle köşeye tam oturmak bu sayıyı gerçekten düşürür.")))
+    uyari.append(dict(seviye="bilgi", metin=(
+        "Düzlem varsayımı: ölçülen şey referansla aynı düzlemde (aynı yükseklikte) "
+        "olmalı. Masadaki parayla masadaki nesneyi ölçebilirsin, raftakini "
+        "ölçemezsin.")))
     return uyari
 
 
@@ -355,10 +406,9 @@ def _tr(deger: float, basamak: int = 1) -> str:
     return f"{deger:.{basamak}f}".replace(".", ",")
 
 
-def _olcum_sozlugu(o: belirsizlik.Olcum) -> dict:
-    return dict(deger=o.deger, std=o.std, alt=o.alt, ust=o.ust, guven=o.guven,
-                yontem=o.yontem, birim=o.birim, bagil_hata=o.bagil_hata,
-                metin=str(o))
+def _olcum_sozlugu(o: belirsizlik.Olcum, ad: str = "") -> dict:
+    return dict(ad=ad, deger=o.deger, std=o.std, alt=o.alt, ust=o.ust, guven=o.guven,
+                yontem=o.yontem, birim=o.birim, bagil_hata=o.bagil_hata, metin=str(o))
 
 
 # ------------------------------------------------------------------ ölçüm akışı
@@ -366,16 +416,15 @@ def _olc(govde: dict, depo: Depo) -> dict:
     gorsel = depo.al(str(govde.get("gorsel_id", "")))
     boyut = (gorsel.yukseklik, gorsel.genislik)
 
-    dunya, resim, sigma_ref, ref_etiket = _referansi_coz(govde, gorsel)
-    ref_tur = (govde.get("referans") or {}).get("tur", "aruco")
-    sigma_px = _sayi(govde, "sigma_px", sigma_ref, en_az=0.01, en_cok=20.0)
+    ref = _referansi_coz(govde, gorsel)
+    sigma_px = _sayi(govde, "sigma_px", ref.sigma, en_az=0.01, en_cok=20.0)
     guven = _sayi(govde, "guven", 0.95, en_az=0.5, en_cok=0.999)
     yontem = str(govde.get("yontem", "monte_carlo"))
     if yontem not in ("monte_carlo", "analitik"):
         raise IstekHatasi(f"Bilinmeyen yöntem '{yontem}'.")
 
     olcum_istek = govde.get("olcum") or {}
-    tur = olcum_istek.get("tur", "mesafe")
+    tur = olcum_istek.get("tur", "kutu")
     if tur not in OLCUM_TURLERI:
         raise IstekHatasi(f"Bilinmeyen ölçüm türü '{tur}'.")
     kural = OLCUM_TURLERI[tur]
@@ -383,54 +432,92 @@ def _olc(govde: dict, depo: Depo) -> dict:
                          kural["en_az"], kural["en_cok"], boyut)
 
     try:
-        h = Homografi.kur(dunya, resim)
+        h = ref.kur()
     except (ValueError, np.linalg.LinAlgError) as hata:
-        raise IstekHatasi(f"Homografi kurulamadı: {hata}") from None
+        raise IstekHatasi(f"Referans kurulamadı: {hata}") from None
+
+    notlar: list[dict] = []
+    if yontem == "analitik" and ref.kur_fn is not None:
+        # Analitik yayılım sekiz projektif parametrenin kovaryansına dayanıyor;
+        # benzerlik modelinde o parametrelerin dördü serbest bile değil.
+        yontem = "monte_carlo"
+        notlar.append(dict(seviye="bilgi", metin=(
+            "Analitik yayılım yalnız dört noktalı projektif referansta tanımlı; "
+            "bu ölçüm Monte Carlo ile yapıldı.")))
 
     ek: dict = {}
+    kutu_sonucu = None
     if tur == "gecit":
-        fn, mc_noktalar, gecit = _gecit_hazirla(h, noktalar, olcum_istek, boyut, ek)
-        mc_tavan = GECIT_MC_TAVAN
-    else:
-        fn = {"mesafe": lambda hh, nn: olcum.mesafe(hh, nn[0], nn[1]),
-              "uzunluk": lambda hh, nn: olcum.uzunluk(hh, nn),
-              "alan": lambda hh, nn: olcum.alan(hh, nn) / 100.0}[tur]
+        fnler, gecit = _gecit_hazirla(h, noktalar, olcum_istek, boyut, ek)
+        mc_noktalar = None
+    elif tur == "kutu":
+        kutu_sonucu = olcum.kutu(h, noktalar)
+        fnler = [("en", lambda hh, nn: olcum.kutu(hh, nn).en_mm, "mm"),
+                 ("boy", lambda hh, nn: olcum.kutu(hh, nn).boy_mm, "mm"),
+                 ("alan", lambda hh, nn: olcum.kutu(hh, nn).alan_mm2 / 100.0, "cm²")]
         mc_noktalar, gecit = noktalar, None
-        mc_tavan = MC_ARALIK[1]
+    else:
+        fnler = {
+            "mesafe": [("mesafe", lambda hh, nn: olcum.mesafe(hh, nn[0], nn[1]), "mm")],
+            "uzunluk": [("uzunluk", lambda hh, nn: olcum.uzunluk(hh, nn), "mm")],
+            "alan": [("alan", lambda hh, nn: olcum.alan(hh, nn) / 100.0, "cm²")],
+        }[tur]
+        mc_noktalar, gecit = noktalar, None
 
-    mc_n = int(_sayi(govde, "mc_n", 400, en_az=MC_ARALIK[0], en_cok=MC_ARALIK[1]))
+    mc_tavan = GECIT_MC_TAVAN if tur == "gecit" else MC_ARALIK[1]
+    mc_n = int(min(_sayi(govde, "mc_n", 400, en_az=MC_ARALIK[0], en_cok=MC_ARALIK[1]),
+                   mc_tavan))
+
     baslangic = time.perf_counter()
-    try:
-        if yontem == "analitik":
-            sonuc = belirsizlik.analitik(h, dunya, resim, fn, mc_noktalar,
-                                         sigma_px=sigma_px, guven=guven,
-                                         birim=kural["birim"])
-        else:
-            sonuc = belirsizlik.monte_carlo(dunya, resim, fn, mc_noktalar,
-                                            sigma_px=sigma_px, n=min(mc_n, mc_tavan),
-                                            guven=guven, birim=kural["birim"])
-    except (ValueError, RuntimeError, np.linalg.LinAlgError) as hata:
-        raise IstekHatasi(f"Ölçüm yapılamadı: {hata}") from None
+    olculer = []
+    for ad, fn, birim in fnler:
+        try:
+            if yontem == "analitik":
+                sonuc = belirsizlik.analitik(h, ref.dunya, ref.resim, fn, mc_noktalar,
+                                             sigma_px=sigma_px, guven=guven, birim=birim)
+            else:
+                # Aynı tohum: üç ölçü de AYNI bozulma kümesinden geliyor, yani
+                # "en" ve "boy" birbiriyle tutarlı bir dünyada ölçülüyor.
+                sonuc = belirsizlik.monte_carlo(ref.dunya, ref.resim, fn, mc_noktalar,
+                                                sigma_px=sigma_px, n=mc_n, guven=guven,
+                                                birim=birim, kur_fn=ref.kur_fn)
+        except (ValueError, RuntimeError, np.linalg.LinAlgError) as hata:
+            raise IstekHatasi(f"Ölçüm yapılamadı: {hata}") from None
+        olculer.append(_olcum_sozlugu(sonuc, ad))
     sure_ms = (time.perf_counter() - baslangic) * 1000.0
 
+    # Alanın bağıl hatası uzunluğunkinin kabaca iki katı; eşiği o belirlerse
+    # uyarı her ölçümde tetiklenir. Uzunluk ölçülerine bakıyoruz.
+    uzunluklar = [o["bagil_hata"] for o in olculer if o["birim"] == "mm"]
+    en_kotu = max(uzunluklar or [o["bagil_hata"] for o in olculer])
     yanit = dict(
         tur=tur,
-        olcum=_olcum_sozlugu(sonuc),
-        referans=dict(tur=ref_tur, etiket=ref_etiket, sigma_px=sigma_px,
-                      koseler=resim.tolist()),
-        homografi=dict(rms_px=h.rms_px, yakinsadi=bool(h.yakinsadi),
-                       olcek_mm_px=[float(h.olcek_mm_px(n)) for n in noktalar[:64]]),
-        uyarilar=_uyarilar(h, noktalar, sonuc, ref_tur, boyut, len(resim), sigma_px),
+        olculer=olculer,
+        olcum=olculer[0],                       # birincil ölçü
+        referans=dict(tur=ref.tur, aile=ref.aile, etiket=ref.etiket,
+                      sigma_px=sigma_px, noktalar=ref.resim.tolist(),
+                      piksel_boyu=(float(np.hypot(*(ref.resim[1] - ref.resim[0])))
+                                   if len(ref.resim) >= 2 else None)),
+        homografi=dict(rms_px=h.rms_px, model=h.model, yakinsadi=bool(h.yakinsadi),
+                       olcek_mm_px=float(h.olcek_mm_px(noktalar.mean(axis=0)))),
+        uyarilar=notlar + _uyarilar(h, noktalar, ref, en_kotu, boyut, sigma_px,
+                                    kutu_sonucu),
         sure_ms=sure_ms,
         **ek,
     )
 
+    if kutu_sonucu is not None:
+        yanit["kutu"] = dict(
+            kenarlar_mm=kutu_sonucu.kenarlar_mm.tolist(),
+            dikdortgenlik=kutu_sonucu.dikdortgenlik,
+            kosegen_mm=kutu_sonucu.kosegen_mm,
+        )
     if tur in ("mesafe", "uzunluk"):
         d = h.dunyaya(noktalar)
         yanit["parcalar"] = [float(np.hypot(*(d[i + 1] - d[i])))
                              for i in range(len(d) - 1)]
     if gecit is not None:
-        yanit["gecit"] = _gecit_ozeti(h, gecit, olcum_istek, sonuc)
+        yanit["gecit"] = _gecit_ozeti(h, gecit, olcum_istek, olculer[0])
     return yanit
 
 
@@ -453,11 +540,10 @@ def _gecit_hazirla(h: Homografi, noktalar, istek, boyut, ek):
                                   kenar_payi_mm=gecit.kenar_payi_mm).genislik_mm
 
     ek["maske_alani_px"] = int(maske.sum())
-    return fn, None, gecit
+    return [("gecit", fn, "mm")], gecit
 
 
-def _gecit_ozeti(h: Homografi, gecit: olcum.Gecit, istek: dict,
-                 sonuc: belirsizlik.Olcum) -> dict:
+def _gecit_ozeti(h: Homografi, gecit: olcum.Gecit, istek: dict, sonuc: dict) -> dict:
     dik = np.array([-gecit.eksen[1], gecit.eksen[0]])
     uclar_mm = np.array([gecit.konum_mm - gecit.genislik_mm / 2.0 * dik,
                          gecit.konum_mm + gecit.genislik_mm / 2.0 * dik])
@@ -478,9 +564,9 @@ def _gecit_ozeti(h: Homografi, gecit: olcum.Gecit, istek: dict,
         # yolu kaçırmaktan pahalı. Asimetrik maliyet, asimetrik eşik.
         ozet["karar"] = dict(
             ayak_izi_mm=ayak_izi, pay_mm=pay, gerekli_mm=gerekli,
-            gecer=bool(sonuc.alt >= gerekli),
-            nokta_tahmini_gecer=bool(sonuc.deger >= gerekli),
-            marj_mm=float(sonuc.alt - gerekli),
+            gecer=bool(sonuc["alt"] >= gerekli),
+            nokta_tahmini_gecer=bool(sonuc["deger"] >= gerekli),
+            marj_mm=float(sonuc["alt"] - gerekli),
         )
     return ozet
 
@@ -509,9 +595,11 @@ def uygulama_kur(*, depo: Depo | None = None) -> Flask:
         return render_template(
             "panel.html",
             surum=__version__,
-            nesneler={ad: list(boyut) for ad, boyut in referans.BILINEN_NESNELER.items()},
+            uzunluklar=[{"ad": ad, "mm": mm, "aciklama": aciklama}
+                        for ad, (mm, aciklama) in referans.BILINEN_UZUNLUKLAR.items()],
+            nesneler={ad: list(b) for ad, b in referans.BILINEN_NESNELER.items()},
             sigmalar=referans.TIPIK_SIGMA_PX,
-            ornekler=sorted(ornek.SAHNELER),
+            ornekler=list(ornek.SAHNELER),
         )
 
     @uygulama.get("/gorsel/<kimlik>")

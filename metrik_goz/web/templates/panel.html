@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>metrik-göz paneli</title>
+  <title>metrik-göz — fotoğraftan gerçek ölçü</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>📐</text></svg>">
   <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}">
 </head>
@@ -11,7 +11,7 @@
 
 <header class="ust">
   <div class="marka">metrik<span>-göz</span></div>
-  <p class="slogan">Tek fotoğraftan gerçek ölçü — ve dürüst bir hata payı.</p>
+  <p class="slogan">Fotoğraftaki nesnenin gerçek ölçüsü — ve dürüst bir hata payı.</p>
   <div class="ust-sag">
     {% for ad in ornekler %}
       <button class="dugme" data-ornek="{{ ad }}">örnek: {{ ad }}</button>
@@ -21,197 +21,149 @@
 </header>
 
 <main>
-  <!-- ---------------------------------------------------------- tuval -->
+  <!-- ------------------------------------------------------------- tuval -->
   <section class="tuval-alani">
-    <div class="arac-cubugu">
-      <button class="dugme secili" id="mod-referans">1 · Referans köşeleri</button>
-      <button class="dugme" id="mod-olcum">2 · Ölçüm noktaları</button>
-      <div class="ayirac"></div>
-      <button class="dugme" id="geri-al" title="Son noktayı sil (⌘Z)">Geri al</button>
-      <button class="dugme" id="temizle" title="Aktif moddaki noktaları sil">Temizle</button>
-      <div class="ayirac"></div>
-      <button class="dugme" id="sigdir" title="Görüntüyü çerçeveye sığdır (F)">Sığdır</button>
-      <button class="dugme" id="yakinlas">+</button>
-      <button class="dugme" id="uzaklas">−</button>
-      <span class="rozet" id="olcek-rozeti">%100</span>
-      <div class="esnek"></div>
-      <button class="dugme" id="dosya-sec">Görüntü seç…</button>
-      <input type="file" id="dosya" accept="image/*" hidden>
-    </div>
-
     <div class="tuval-sarmal" id="tuval-sarmal">
       <canvas id="tuval"></canvas>
       <canvas id="buyutec" width="132" height="132"></canvas>
       <div class="birak-katmani" id="birak">
         <div class="birak-cerceve"></div>
-        <h2>Görseli buraya sürükle</h2>
+        <h2>Fotoğrafı buraya sürükle</h2>
         <p>
-          Ya da <b>Görüntü seç…</b> düğmesini kullan, panoya kopyaladığın bir görseli
-          <code>⌘V</code> ile yapıştır. Elinde fotoğraf yoksa sağ üstteki örnek
-          sahnelerden birini aç — onlarda doğru cevabı da biliyoruz.
+          Ya da <b>fotoğraf seç</b>. Fotoğrafta ölçüsünü bildiğin bir şey olmalı —
+          bir madeni para yeter. Elinde fotoğraf yoksa sağ üstteki örnekleri dene.
         </p>
+        <button class="dugme birincil dar" id="dosya-sec-buyuk">Fotoğraf seç</button>
       </div>
+      <div class="ipucu-serit" id="serit" hidden></div>
     </div>
-
     <div class="alt-cubuk">
-      <span id="durum-metni">Görüntü bekleniyor.</span>
+      <span id="durum-metni">Fotoğraf bekleniyor.</span>
       <div class="esnek"></div>
-      <span id="imlec-px"></span>
-      <span id="imlec-mm"></span>
+      <button class="dugme minik" id="sigdir" title="Sığdır (F)">sığdır</button>
+      <button class="dugme minik" id="uzaklas">−</button>
+      <span class="rozet" id="olcek-rozeti">%100</span>
+      <button class="dugme minik" id="yakinlas">+</button>
     </div>
   </section>
 
-  <!-- ---------------------------------------------------------- yan panel -->
+  <!-- ------------------------------------------------------------- yan -->
   <aside class="yan">
 
-    <div class="bolum">
-      <h3 class="bolum-basligi">1 · Referans <span class="esnek"></span>
-        <span class="rozet" id="ref-rozeti">yok</span></h3>
-      <div class="segment" id="ref-turleri">
-        <button class="dugme secili" data-ref="aruco">ArUco</button>
-        <button class="dugme" data-ref="kare">Kare</button>
-        <button class="dugme" data-ref="dikdortgen">Dikdörtgen</button>
-        <button class="dugme" data-ref="nesne">Bilinen nesne</button>
+    <section class="adim" id="adim-foto">
+      <h3><i>1</i> Fotoğraf <span class="esnek"></span>
+        <span class="onay" id="foto-onay" hidden>✓</span></h3>
+      <div class="adim-govde">
+        <button class="dugme genis" id="dosya-sec">Fotoğraf seç…</button>
+        <input type="file" id="dosya" accept="image/*" hidden>
+        <p class="not" id="foto-not">Sürükle-bırak ve <code>⌘V</code> ile yapıştırma da çalışır.</p>
       </div>
+    </section>
 
-      <div id="ref-aruco">
-        <div class="satir">
-          <label for="aruco-kenar">Kenar (mm)</label>
-          <input type="number" id="aruco-kenar" value="100" min="1" step="1">
+    <section class="adim" id="adim-ref">
+      <h3><i>2</i> Referans <span class="esnek"></span>
+        <span class="onay" id="ref-onay" hidden>✓</span></h3>
+      <div class="adim-govde">
+        <div class="segment mini" id="ref-turleri">
+          <button class="dugme secili" data-ref="olcek">Uzunluk</button>
+          <button class="dugme" data-ref="dikdortgen">Dikdörtgen</button>
+          <button class="dugme" data-ref="aruco">ArUco</button>
         </div>
-        <div class="satir">
-          <label for="aruco-sozluk">Sözlük</label>
-          <select id="aruco-sozluk">
-            <option>DICT_4X4_50</option><option>DICT_4X4_100</option>
-            <option>DICT_5X5_100</option><option>DICT_6X6_250</option>
-            <option>DICT_APRILTAG_36h11</option>
-          </select>
-        </div>
-        <button class="dugme" id="aruco-bul" style="width:100%;justify-content:center">
-          İşareti otomatik bul
-        </button>
-        <p class="ipucu">Köşe okuması alt piksel doğrulukta; belirsizlik elle
-          tıklamaya göre yaklaşık dört kat düşük.</p>
-      </div>
 
-      <div id="ref-kare" hidden>
-        <div class="satir">
-          <label for="kare-kenar">Kenar (mm)</label>
-          <input type="number" id="kare-kenar" value="100" min="1" step="1">
-        </div>
-      </div>
-
-      <div id="ref-dikdortgen" hidden>
-        <div class="satir">
-          <label for="dik-gen">Genişlik (mm)</label>
-          <input type="number" id="dik-gen" value="297" min="1" step="1">
-        </div>
-        <div class="satir">
-          <label for="dik-yuk">Yükseklik (mm)</label>
-          <input type="number" id="dik-yuk" value="210" min="1" step="1">
-        </div>
-      </div>
-
-      <div id="ref-nesne" hidden>
-        <div class="satir">
-          <label for="nesne-ad">Nesne</label>
-          <select id="nesne-ad">
-            {% for ad, boyut in nesneler.items() %}
-              <option value="{{ ad }}">{{ ad }} — {{ boyut[0] }}×{{ boyut[1] }} mm</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-
-      <p class="ipucu" id="ref-ipucu"></p>
-    </div>
-
-    <div class="bolum">
-      <h3 class="bolum-basligi">2 · Ölçüm <span class="esnek"></span>
-        <span class="rozet" id="olcum-rozeti">0 nokta</span></h3>
-      <div class="segment" id="olcum-turleri">
-        <button class="dugme secili" data-olcum="mesafe">Mesafe</button>
-        <button class="dugme" data-olcum="uzunluk">Uzunluk</button>
-        <button class="dugme" data-olcum="alan">Alan</button>
-        <button class="dugme" data-olcum="gecit">En dar geçit</button>
-      </div>
-      <p class="ipucu" id="olcum-ipucu"></p>
-
-      <div id="gecit-ayarlari" hidden>
-        <div class="satir">
-          <label for="ayak-izi">Ayak izi (mm)</label>
-          <input type="number" id="ayak-izi" value="480" min="0" step="10">
-        </div>
-        <div class="satir">
-          <label for="gecit-pay">Emniyet payı</label>
-          <input type="number" id="gecit-pay" value="0" min="0" step="10">
-        </div>
-      </div>
-    </div>
-
-    <div class="bolum">
-      <h3 class="bolum-basligi">3 · Belirsizlik</h3>
-      <div class="satir">
-        <label for="yontem">Yöntem</label>
-        <select id="yontem">
-          <option value="monte_carlo">Monte Carlo (referans doğru)</option>
-          <option value="analitik">Analitik (hızlı)</option>
-        </select>
-      </div>
-      <div class="satir">
-        <label for="sigma">σ köşe (px)</label>
-        <input type="number" id="sigma" value="0.4" min="0.01" max="20" step="0.1">
-      </div>
-      <details class="gelismis">
-        <summary>Gelişmiş</summary>
-        <div>
+        <div id="ref-olcek">
           <div class="satir">
-            <label for="guven">Güven</label>
-            <select id="guven">
-              <option value="0.68">%68</option>
-              <option value="0.9">%90</option>
-              <option value="0.95" selected>%95</option>
-              <option value="0.99">%99</option>
+            <select id="uzunluk-ad">
+              {% for u in uzunluklar %}
+                <option value="{{ u.ad }}" data-mm="{{ u.mm }}"
+                  {% if u.ad == '1_tl' %}selected{% endif %}>{{ u.aciklama }} — {{ u.mm }} mm</option>
+              {% endfor %}
+              <option value="">kendim yazacağım…</option>
             </select>
           </div>
           <div class="satir">
-            <label for="mc-n">MC örneği</label>
-            <input type="number" id="mc-n" value="400" min="50" max="4000" step="50">
+            <label for="uzunluk-mm">Gerçek boyu</label>
+            <input type="number" id="uzunluk-mm" value="26.15" min="0.1" step="0.05">
+            <span class="birim-etiket">mm</span>
           </div>
-          <div class="satir">
-            <label for="adim">Kesit adımı</label>
-            <input type="number" id="adim" value="20" min="1" step="5">
-          </div>
-          <div class="satir">
-            <label for="ornek-mm">Tarama (mm)</label>
-            <input type="number" id="ornek-mm" value="5" min="0.5" step="1">
-          </div>
-          <p class="ipucu">Son iki alan yalnız geçit ölçümünde kullanılıyor:
-            eksene dik kesitlerin sıklığı ve kesit üzerindeki örnekleme adımı.
-            Örnekleme adımı ölçüm çözünürlüğünü belirliyor.</p>
         </div>
-      </details>
-    </div>
 
-    <div class="bolum">
-      <button class="dugme birincil" id="calistir" disabled>Çalıştır</button>
-      <p class="ipucu" id="calistir-ipucu">Önce referans köşeleri, sonra ölçüm noktaları.</p>
-    </div>
+        <div id="ref-dikdortgen" hidden>
+          <div class="satir">
+            <select id="nesne-ad">
+              {% for ad, boyut in nesneler.items() %}
+                <option value="{{ ad }}">{{ ad }} — {{ boyut[0] }}×{{ boyut[1] }} mm</option>
+              {% endfor %}
+              <option value="">kendim yazacağım…</option>
+            </select>
+          </div>
+          <div class="satir ikili" id="dikdortgen-olculeri" hidden>
+            <input type="number" id="dik-gen" value="297" min="1" step="1" title="uzun kenar">
+            <span class="birim-etiket">×</span>
+            <input type="number" id="dik-yuk" value="210" min="1" step="1" title="kısa kenar">
+            <span class="birim-etiket">mm</span>
+          </div>
+        </div>
 
-    <div class="bolum" id="sonuc-bolumu">
-      <h3 class="bolum-basligi">Sonuç <span class="esnek"></span>
-        <span class="rozet" id="sure-rozeti" hidden></span></h3>
-      <div id="sonuc-govde">
-        <p class="sonuc-bos">Henüz ölçüm yok. Çalıştır'a bastığında sonuç,
-          hata payı ve uyarılar burada görünecek.</p>
+        <div id="ref-aruco" hidden>
+          <div class="satir">
+            <label for="aruco-kenar">İşaret kenarı</label>
+            <input type="number" id="aruco-kenar" value="100" min="1" step="1">
+            <span class="birim-etiket">mm</span>
+          </div>
+          <button class="dugme genis" id="aruco-bul">İşareti otomatik bul</button>
+        </div>
+
+        <p class="not" id="ref-not"></p>
+        <button class="dugme minik gizle-bos" id="ref-yeniden" hidden>yeniden çiz</button>
       </div>
-    </div>
+    </section>
+
+    <section class="adim" id="adim-nesne">
+      <h3><i>3</i> Nesne <span class="esnek"></span>
+        <span class="onay" id="nesne-onay" hidden>✓</span></h3>
+      <div class="adim-govde">
+        <p class="not" id="nesne-not">Ölçmek istediğin nesnenin üstüne bir kutu çiz.</p>
+        <button class="dugme minik" id="nesne-yeniden" hidden>yeniden çiz</button>
+      </div>
+    </section>
+
+    <section class="sonuc" id="sonuc">
+      <div id="sonuc-govde">
+        <p class="sonuc-bos">Referansı ve nesneyi işaretlediğinde ölçü burada,
+          hata payıyla birlikte görünecek.</p>
+      </div>
+    </section>
+
+    <details class="gelismis">
+      <summary>Gelişmiş</summary>
+      <div>
+        <div class="satir">
+          <label for="sigma">Tıklama gürültüsü</label>
+          <input type="number" id="sigma" value="1.5" min="0.01" max="20" step="0.1">
+          <span class="birim-etiket">px</span>
+        </div>
+        <div class="satir">
+          <label for="guven">Güven</label>
+          <select id="guven">
+            <option value="0.68">%68</option><option value="0.9">%90</option>
+            <option value="0.95" selected>%95</option><option value="0.99">%99</option>
+          </select>
+        </div>
+        <div class="satir">
+          <label for="mc-n">MC örneği</label>
+          <input type="number" id="mc-n" value="400" min="50" max="4000" step="50">
+        </div>
+        <p class="not">Hata payı Monte Carlo ile üretiliyor: referansı ve
+          tıkladığın köşeleri gürültüyle bozup ölçümü baştan yapıyoruz. Tıklama
+          gürültüsü elle işaretlemede tipik olarak 1–2 piksel.</p>
+      </div>
+    </details>
 
   </aside>
 </main>
 
 <script id="sunucu-verisi" type="application/json">
-  {{ {"nesneler": nesneler, "sigmalar": sigmalar, "ornekler": ornekler} | tojson }}
+  {{ {"uzunluklar": uzunluklar, "nesneler": nesneler, "sigmalar": sigmalar} | tojson }}
 </script>
 <script src="{{ url_for('static', filename='panel.js') }}"></script>
 </body>
