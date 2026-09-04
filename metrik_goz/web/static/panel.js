@@ -370,7 +370,8 @@ window.addEventListener("paste", (o) => {
 });
 
 /* ================================================================ arayüz bağları */
-$("dosya-sec").onclick = $("dosya-sec-buyuk").onclick = () => $("dosya").click();
+$("dosya-sec").onclick = $("dosya-sec-buyuk").onclick =
+  $("yeni-olcum").onclick = () => $("dosya").click();
 $("dosya").onchange = (o) => o.target.files[0] && gorselYukle(o.target.files[0]);
 $("sigdir").onclick = sigdir;
 $("yakinlas").onclick = () => yakinlastir(1.3);
@@ -383,6 +384,16 @@ $("ref-yeniden").onclick = () => {
   degisti();
 };
 $("nesne-yeniden").onclick = () => { durum.nesne.koseler = []; degisti(); };
+
+// Kenar çubuğundaki belirsizlik kartı "gelişmiş" ayarlarının aynası.
+function belirsizlikKarti() {
+  const guven = Number($("guven").value);
+  $("kenar-guven").textContent = yuzde(guven, 0);
+  $("kenar-cubuk").style.width = `${(guven * 100).toFixed(0)}%`;
+  $("kenar-not").textContent =
+    `σ ${sayi(Number($("sigma").value), 1)} px · ${$("mc-n").value} MC örneği`;
+}
+["sigma", "guven", "mc-n"].forEach((k) => $(k).addEventListener("input", belirsizlikKarti));
 
 document.querySelectorAll("[data-ornek]").forEach((d) =>
   d.onclick = () => ornekYukle(d.dataset.ornek));
@@ -457,6 +468,12 @@ function arayuzuTazele() {
     el.classList.toggle("tamam", tamam);
     el.classList.toggle("etkin", aktif === kisa && !tamam);
     $(kisa + "-onay").hidden = !tamam;
+    // Kenar çubuğundaki akış listesi aynı durumu gösteriyor.
+    const nav = document.querySelector(`[data-akis="${kisa}"]`);
+    if (nav) {
+      nav.classList.toggle("tamam", tamam);
+      nav.classList.toggle("etkin", aktif === kisa && !tamam);
+    }
   });
 
   $("foto-not").textContent = foto
@@ -647,7 +664,62 @@ function el(etiket, sinif, icerik) {
   return d;
 }
 
+function kartlariBosalt() {
+  $("olcut-ad").textContent = "ÖLÇÜ";
+  $("olcut-deger").textContent = "—";
+  $("olcut-not").textContent = "ölçüm bekleniyor";
+  $("pay-deger").textContent = "—";
+  $("pay-not").textContent = "standart sapma";
+  $("aralik-deger").textContent = "—";
+  $("aralik-not").textContent = "kararı bu aralığın ucu verir";
+  $("aralik-iz").hidden = true;
+  $("ref-deger").textContent = "—";
+  $("ref-not-kart").textContent = "henüz işaretlenmedi";
+  $("ref-cipler").innerHTML = "";
+  $("tuval-cipler").hidden = true;
+}
+
+function kartlariDoldur(s) {
+  const o = s.olcum;
+  $("olcut-ad").textContent = o.ad.toLocaleUpperCase("tr-TR");
+  $("olcut-deger").innerHTML = "";
+  $("olcut-deger").append(document.createTextNode(sayi(o.deger)),
+                          el("small", "", o.birim));
+  $("olcut-not").textContent = `${s.tur} · ${o.yontem}`;
+
+  $("pay-deger").innerHTML = "";
+  $("pay-deger").append(document.createTextNode(`± ${sayi(o.std)}`),
+                        el("small", "", o.birim));
+  $("pay-not").textContent = `bağıl ${yuzde(o.bagil_hata, 2)}`;
+
+  $("aralik-deger").textContent = `${sayi(o.alt)} – ${sayi(o.ust)}`;
+  $("aralik-not").textContent = `${yuzde(o.guven, 0)} güven · ${o.birim}`;
+  // İşaretin yeri: nokta tahmininin aralık içindeki gerçek konumu.
+  const genislik = o.ust - o.alt;
+  $("aralik-iz").hidden = !(genislik > 0);
+  if (genislik > 0) {
+    const oran = Math.min(1, Math.max(0, (o.deger - o.alt) / genislik));
+    $("aralik-imleci").style.left = `${(oran * 100).toFixed(1)}%`;
+  }
+
+  $("ref-deger").innerHTML = "";
+  $("ref-deger").append(document.createTextNode(sayi(s.homografi.olcek_mm_px, 3)),
+                        el("small", "", "mm/px"));
+  $("ref-not-kart").textContent = s.referans.etiket;
+  const cipler = $("ref-cipler");
+  cipler.innerHTML = "";
+  [s.homografi.model, `RMS ${sayi(s.homografi.rms_px, 2)} px`,
+   `σ ${sayi(s.referans.sigma_px, 1)} px`]
+    .forEach((metin) => cipler.append(el("span", "cip", metin)));
+
+  $("tuval-cipler").hidden = false;
+  $("cip-sigma").textContent = `σ ${sayi(s.referans.sigma_px, 1)} px`;
+  $("cip-rms").textContent = `RMS ${sayi(s.homografi.rms_px, 2)} px`;
+  $("cip-olcek").textContent = `${sayi(s.homografi.olcek_mm_px, 3)} mm/px`;
+}
+
 function sonucuTemizle() {
+  kartlariBosalt();
   $("sonuc-govde").innerHTML = "";
   $("sonuc-govde").append(el("p", "sonuc-bos",
     !durum.gorsel ? "Önce bir fotoğraf yükle."
@@ -656,6 +728,7 @@ function sonucuTemizle() {
 }
 
 function hataGoster(metin) {
+  kartlariBosalt();
   $("sonuc-govde").innerHTML = "";
   $("sonuc-govde").append(el("div", "hata-kutu", metin));
 }
@@ -676,6 +749,7 @@ function olcuBlogu(o, gercek) {
 }
 
 function sonucuBas(s) {
+  kartlariDoldur(s);
   const govde = $("sonuc-govde");
   govde.innerHTML = "";
   const gercek = (ad) => (durum.demo && durum.demo.gercek && durum.demo.gercek[ad]
@@ -727,4 +801,5 @@ function sonucuBas(s) {
 new ResizeObserver(tuvaliOlcekle).observe(sarmal);
 tuvaliOlcekle();
 arayuzuTazele();
+belirsizlikKarti();
 sonucuTemizle();
