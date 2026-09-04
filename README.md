@@ -1,4 +1,6 @@
 <div align="center">
+<img width="327" height="334" alt="IMG_4886 3" src="https://github.com/user-attachments/assets/1f5f1636-43f0-4b58-956d-539f2a85974e" />
+
 
 # metrik-goz
 
