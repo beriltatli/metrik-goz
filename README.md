@@ -1,14 +1,35 @@
+<div align="center">
+
 # metrik-goz
 
 **Tek fotoğraftan gerçek ölçü — ve dürüst bir hata payı.**
+
+```
+Mesafe:   412.3 ± 8.7 mm (%95: 395.1–429.4)
+```
+
+`saf NumPy çekirdek` · `elle yazılmış Levenberg–Marquardt` · `56 test` · `sentetik doğrulama`
+
+</div>
+
+---
 
 Bir görüntü işleme sistemi "41,2 cm" diyorsa bu tek başına bilgi değil.
 "41,2 ± 0,9 cm, %95 güven" bilgi. Bu paket ikincisini üretiyor, ve ürettiği
 güven aralığının gerçekten tuttuğunu ölçerek gösteriyor.
 
+```bash
+pip install -e ".[web]"
+metrik-goz panel          # http://127.0.0.1:8000 — elinde fotoğraf yoksa örnek sahneler hazır
 ```
-Mesafe:   412.3 ± 8.7 mm (%95: 395.1–429.4)
-```
+
+<sub>
+
+[Neden](#neden) · [Ne yapıyor](#ne-yapıyor) · [Kullanım](#kullanım) ·
+[Web paneli](#web-paneli) · [HTTP API](#http-api) · [Nasıl çalışıyor](#nasıl-çalışıyor) ·
+[Doğrulama](#doğrulama) · [Sınırlar](#sınırlar) · [Kurulum](#kurulum-ve-testler)
+
+</sub>
 
 ---
 
@@ -54,6 +75,14 @@ güvenebileceğini belirliyor:
 Ucuz olan yol her zaman geçerli değil; hangisinin ne zaman tutmadığı
 [Doğrulama](#doğrulama) bölümünde ölçülmüş durumda.
 
+Kutudan çıkan referans tablosu (`metrik_goz.referans`):
+
+| Aile | Hazır seçenekler |
+|---|---|
+| Tek uzunluk | 1 TL · 50/25/10/5/1 kuruş · 2 € · 1 € · 50 sent · ABD 25 cent · kredi kartının uzun ya da kısa kenarı |
+| Dikdörtgen | `kredi_karti` (ISO ID-1) · `a4` · `a5` · `cd` · `post_it` |
+| ArUco | `DICT_4X4_50` (kenar uzunluğunu sen verirsin), köşeler alt piksel doğrulukta |
+
 ---
 
 ## Kullanım
@@ -95,9 +124,17 @@ Komut satırından:
 metrik-goz kutu   masa.jpg  --olcek-ad 1_tl --uc 812,455 --uc 888,455 \
                             --kose-nesne ... (nesnenin 4 köşesi)
 metrik-goz mesafe masa.jpg  --aruco 100 --nokta 412,690 --nokta 905,712
+metrik-goz alan   masa.jpg  --nesne a4 --kose ... (referansın 4 köşesi) \
+                            --nokta ... (çokgenin en az 3 noktası)
 metrik-goz gecit  enkaz.jpg --aruco 200 --maske serbest.png --ayak-izi 480
+metrik-goz ornek  --sahne hepsi --cikti ornekler/
 metrik-goz dogrula --cikti dogrulama/
+metrik-goz panel  --port 8000
 ```
+
+Her komut referansı aynı bayraklarla alıyor: `--aruco KENAR_MM`,
+`--olcek-ad AD --uc x,y ×2`, `--olcek UZUNLUK_MM --uc x,y ×2` ya da
+`--nesne AD --kose x,y ×4`. Ortak `--mc` Monte Carlo örnek sayısını verir.
 
 Geçit komutu kararı aralığın **alt ucuna** göre verir — yukarıdaki asimetri
 yüzünden.
@@ -111,24 +148,39 @@ pip install -e ".[web]"
 metrik-goz panel            # http://127.0.0.1:8000
 ```
 
-Görseli tarayıcıya sürükle, referansı işaretle, ölç. Sol tarafta görüntü ve
-tıkladığın noktalar, sağ tarafta ölçüm, hata payı ve uyarılar.
+Görseli tarayıcıya sürükle, referansı işaretle, ölç. Solda akış ve örnek
+sahneler, ortada tuval, sağda adımlar ve uyarılar; üstteki dört kart her zaman
+son ölçümün gerçek çıktısını gösteriyor.
+
+| Kart | Ne yazıyor |
+|---|---|
+| **ÖLÇÜ** | değerin kendisi (en / boy / alan) |
+| **HATA PAYI** | standart sapma |
+| **GÜVEN ARALIĞI** | alt–üst uç; kararı bu aralığın ucu verir |
+| **AKTİF REFERANS** | hangi referans, hangi model, σ ve yeniden izdüşüm RMS'i |
+
+Akış üç adım:
 
 | Adım | Panelde |
 |---|---|
-| Görsel | sürükle-bırak, `⌘V` ile yapıştır ya da dosya seç |
-| Referans | **Uzunluk**: listeden bir para/kart seç, iki ucunu tıkla · **Dikdörtgen**: kredi kartı / A4 / kendi ölçün, dört köşesini tıkla · **ArUco**: otomatik bul |
-| Nesne | ölçmek istediğin şeyin üstüne dört köşeli bir kutu çiz |
-| Sonuç | en, boy ve alan; her biri güven aralığıyla, en tehlikelisi başta olmak üzere uyarılarla |
+| **1 · Fotoğraf** | sürükle-bırak, `⌘V` ile yapıştır ya da dosya seç |
+| **2 · Referans** | **Uzunluk**: listeden bir para/kart seç (ya da mm'yi elle yaz), iki ucunu tıkla · **Dikdörtgen**: kredi kartı / A4 / A5 / CD / post-it ya da kendi ölçün, dört köşesini tıkla · **ArUco**: kenarı yaz, otomatik bulunsun |
+| **3 · Nesne** | ölçmek istediğin şeyin üstüne dört köşeli bir kutu çiz |
+| **Sonuç** | en, boy ve alan; her biri güven aralığıyla, en tehlikelisi başta olmak üzere uyarılarla |
+
+**Gelişmiş** bölümünde üç şey senin: tıklama gürültüsü (`sigma_px`, elle
+işaretlemede tipik 1–2 px), güven seviyesi (%68 / %90 / %95 / %99) ve Monte
+Carlo örnek sayısı. Üçü de doğrudan hesaba giriyor — süs değil.
 
 Panel tek bir akış sürüyor — "şu nesne kaç santim". `mesafe`, `uzunluk`, `alan`
 ve `en_dar_gecit` ölçümleri kütüphanede, CLI'da ve `/api/olc` uç noktasında
 duruyor; panelde yok, çünkü tek akışlı bir arayüz yanlış tıklamayla yanlış
 ölçüm yapılan bir arayüzden iyi.
 
-Noktaları sürükleyerek düzeltebilir, tekerlekle yakınlaşabilirsin; imlecin
-yanındaki büyüteç köşeyi piksel piksel oturtmak için. Tıklama gürültüsü ölçüm
-belirsizliğine giren gerçek bir terim (`sigma_px`), o yüzden büyüteç süs değil.
+Noktaları sürükleyerek düzeltebilir, tekerlekle yakınlaşabilir, `sığdır` ile
+geri dönebilirsin; imlecin yanındaki büyüteç köşeyi piksel piksel oturtmak için.
+Tıklama gürültüsü ölçüm belirsizliğine giren gerçek bir terim (`sigma_px`),
+o yüzden büyüteç süs değil.
 
 **Panel hiçbir şey ölçmüyor.** Gördüğün her sayı `metrik_goz.olcum` ve
 `metrik_goz.belirsizlik` içindeki, testleri geçen aynı fonksiyonlardan geliyor;
@@ -144,14 +196,20 @@ bayrağı taşıyor; tarayıcı onu uygular, sunucu uygulamazsa senin tıkladı�
 
 ### Elinde fotoğraf yoksa
 
+Kenar çubuğundaki **Örnek sahneler** düğmeleri doğru cevabı bilinen sentetik
+sahneler açıyor: kamerayı, referansı ve ölçülecek mesafeyi biz koyduğumuz için
+panel ölçümün yanına gerçek değeri de yazabiliyor — ve gerçek değer aralığın
+içine düşerse **✓**, düşmezse **✗** koyuyor. Güven aralığının tutup tutmadığını
+tek bakışta görmenin başka yolu yok; gerçek fotoğrafta doğru cevap yoktur.
+Sahne açılırken referansın uçları ve nesnenin köşeleri de yerleştiriliyor, yani
+tek tıkla ölçülmüş bir sonuç görüyorsun; noktaları oynatıp ne değiştiğine
+bakabilirsin.
+
+Aynı sahneler diske de yazılabiliyor (görüntü + doğru cevabı taşıyan JSON):
+
 ```bash
 metrik-goz ornek --sahne hepsi --cikti ornekler/
 ```
-
-Panelin sağ üstündeki **örnek** düğmeleri doğru cevabı bilinen sentetik sahneler
-açıyor: kamerayı, referansı ve ölçülecek mesafeyi biz koyduğumuz için panel
-ölçümün yanına gerçek değeri de yazabiliyor. Güven aralığının tutup tutmadığını
-tek bakışta görmenin başka yolu yok — gerçek fotoğrafta doğru cevap yoktur.
 
 | Örnek | Ne var | Doğru cevap | Panelde |
 |---|---|---|---|
@@ -164,6 +222,26 @@ ikisini arka arkaya çalıştırmak, tek uzunluktan kurulan ölçeğin nerede tu
 nerede tutmadığını bir bakışta gösteriyor. `egik` sahnede sistem 146,7 mm yerine
 112 mm ölçüyor **ve bunu yüksek seviyeli bir uyarıyla söylüyor**; sessizce
 yanılmıyor.
+
+---
+
+## HTTP API
+
+Panel kendi sunucusuyla yalnız bu uç noktalar üzerinden konuşuyor; aynı uçlar
+dışarıdan da kullanılabilir (`metrik-goz panel`, varsayılan `127.0.0.1:8000`).
+
+| Uç nokta | Ne yapıyor |
+|---|---|
+| `POST /api/gorsel` | görsel yükler (çok parçalı `dosya`), EXIF'siz kopyasını üretir, `gorsel_id` döner |
+| `POST /api/ornek` | `{"ad": "duz"}` — sentetik sahne üretir; doğru cevabı ve ipucu noktalarını da döner |
+| `POST /api/aruco` | görselde ArUco arar, köşeleri ve tipik `sigma_px`'i döner |
+| `POST /api/olc` | asıl ölçüm: referans + noktalar → değer, std, güven aralığı, uyarı listesi |
+| `GET /api/durum` | sürüm, OpenCV sürümü, yükleme sınırı |
+| `GET /gorsel/<kimlik>` | yüklenen görselin sunucudaki normalize kopyası |
+
+Uyarılar `/api/olc` yanıtında `seviye` (`yuksek` / `orta` / `bilgi`) ile geliyor
+ve en tehlikelisi başta sıralanıyor; eşikler modele göre değişiyor, çünkü
+benzerlik ile projektif modelin zaafları farklı yerlerde.
 
 ---
 
@@ -295,7 +373,9 @@ kenarları eğik çekimde ayrışıyor; `Kutu.dikdortgenlik` bu ayrışmayı öl
 eğimin gözlenebilir vekili oluyor. %6 eşiği, %5'ten büyük yanlılığın
 **%78'ini** yakalıyor; %16 yanlış alarm karşılığında. Panelin ve CLI'ın
 "fotoğraf eğik çekilmiş, hata payı bunu kapsamıyor" uyarısı bu sayıya dayanıyor —
-uyarı metni bir tahmin değil, ölçülmüş bir yakalama oranı.
+uyarı metni bir tahmin değil, ölçülmüş bir yakalama oranı. Panel aynı ölçüyü
+%2 eşiğinde bir de "orta" seviyede kullanıyor: hafif perspektifi, kararı
+bozmadan önce söylemek için.
 
 ### Hızlı yol yavaş yolla aynı sonucu veriyor mu
 
@@ -345,7 +425,7 @@ metrik-goz panel            # web panelini aç
 Çekirdek matematik yalnız NumPy'a bağlı — güven aralığının kritik değerleri bile
 standart kütüphaneden geliyor, scipy gerekmiyor. OpenCV yalnız ArUco tespiti ve
 görüntü okuma için, Flask yalnız panel için gerekiyor; kendi köşelerini verirsen
-çekirdek ikisi olmadan da çalışır.
+çekirdek ikisi olmadan da çalışır. Python 3.10+.
 
 | Ekstra | Ne getiriyor |
 |---|---|
@@ -353,6 +433,27 @@ görüntü okuma için, Flask yalnız panel için gerekiyor; kendi köşelerini 
 | `.[web]` | Flask + OpenCV — `metrik-goz panel` |
 | `.[grafik]` | matplotlib — `metrik-goz dogrula` grafikleri |
 | `.[gelistirme]` | hepsi + pytest |
+
+### Depo düzeni
+
+```
+metrik_goz/
+  homografi.py     DLT + LM ile homografi, benzerlik modeli, düzlem dışı uyarısı
+  lm.py            elle yazılmış Levenberg–Marquardt (analitik Jacobian)
+  olcum.py         mesafe, uzunluk, alan, kutu, en_dar_gecit
+  belirsizlik.py   Monte Carlo ve analitik yayılım, Olcum tipi
+  referans.py      ArUco tespiti, bilinen uzunluk/nesne tabloları
+  sentetik.py      doğru cevabı bilinen sahne üreteci
+  ornek.py         panelin ve CLI'ın örnek sahneleri
+  dogrulama.py     kapsama/hata/benzerlik taramaları ve grafikleri
+  cli.py           komut satırı
+  web/             Flask sunucusu + panel (sunucu hesabı, tarayıcı yalnız piksel)
+testler/           56 test: geometri, LM, kapsama, web-kütüphane eşitliği
+dogrulama/         `metrik-goz dogrula` çıktısı: grafikler + sonuclar.json
+ornekler/          `metrik-goz ornek` çıktısı: görüntü + doğru cevap JSON'u
+metrik-goz-atolye/ aynı çekirdeği sıfırdan yazmak için adım adım atölye
+                   (kasıtlı olarak yarım: testler hazır, kod sana ait)
+```
 
 ---
 
