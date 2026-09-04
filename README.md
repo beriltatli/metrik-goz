@@ -1,8 +1,5 @@
 <div align="center">
-<img width="327" height="334" alt="IMG_4886 3" src="https://github.com/user-attachments/assets/1f5f1636-43f0-4b58-956d-539f2a85974e" />
-
-
-# metrik-goz
+<img width="162" height="39" alt="Ekran Resmi 2026-09-04 ÖS 4 44 55" src="https://github.com/user-attachments/assets/23b841ee-570a-4fa1-8a48-955a07ae0089" />
 
 **Real-world measurements from a single photo — with an honest error bar.**
 
