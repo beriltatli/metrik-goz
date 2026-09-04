@@ -1,11 +1,10 @@
 """
-Measurement layer: what happens on the pixels once the homography is built,
-answering in millimeters.
+The measurement layer: given a homography, turn clicked pixels into millimeters.
 
-Because a projective transform maps lines to lines, carrying the polygon corners
-onto the world plane and measuring there gives the right answer; there is no
-need to sample along the edges. The one exception is `narrowest_passage`: there
-the free space itself can have curved boundaries, so we scan on the world plane.
+A projective transform maps lines to lines, so pushing the polygon corners onto
+the world plane and measuring there is exact. No need to sample along the edges.
+The one exception is `narrowest_passage`, where the free space itself can have
+curved boundaries, so that one scans on the world plane.
 """
 
 from __future__ import annotations
@@ -19,30 +18,27 @@ from .homography import Homography
 
 @dataclass
 class Passage:
-    """The result of the narrowest-passage measurement."""
-
     width_mm: float
-    position_mm: np.ndarray       # midpoint of the passage, world coordinates
-    axis: np.ndarray              # direction of travel (unit vector)
-    profile_mm: np.ndarray        # free width at each station
-    stations_mm: np.ndarray       # position of the stations along the axis
-    edge_margin_mm: float = 0.0   # distance skipped at both ends (explained below)
+    position_mm: np.ndarray     # midpoint of the passage in world coordinates
+    axis: np.ndarray            # direction of travel, unit vector
+    profile_mm: np.ndarray      # free width at each station
+    stations_mm: np.ndarray
+    edge_margin_mm: float = 0.0  # how much we skipped at each end, see below
 
     def fits(self, footprint_mm: float, clearance_mm: float = 0.0) -> bool:
-        """Does a vehicle with the given footprint get through this passage?"""
         return self.width_mm >= footprint_mm + clearance_mm
 
 
 @dataclass
 class Box:
-    """The plane dimensions of an object whose four corners were marked."""
+    """Plane dimensions of an object whose four corners were marked."""
 
-    width_mm: float               # mean of edges 1 and 3 (in drawing order)
-    height_mm: float              # mean of edges 2 and 4
+    width_mm: float             # mean of edges 1 and 3, in drawing order
+    height_mm: float            # mean of edges 2 and 4
     area_mm2: float
-    edges_mm: np.ndarray          # the four edges, in corner order
+    edges_mm: np.ndarray
     corners_mm: np.ndarray
-    rectangularity: float         # mismatch between opposite edges; 0 = perfect
+    rectangularity: float       # how far opposite edges disagree; 0 is perfect
 
     @property
     def diagonal_mm(self) -> float:
@@ -50,31 +46,30 @@ class Box:
         return float((np.hypot(*(c[2] - c[0])) + np.hypot(*(c[3] - c[1]))) / 2.0)
 
 
-# ----------------------------------------------------------------- basic measures
 def distance(homography: Homography, p1_px, p2_px) -> float:
-    """Real distance between two pixels (mm)."""
+    """Real distance between two pixels, in mm."""
     d = homography.to_world(np.array([p1_px, p2_px], dtype=float))
     return float(np.hypot(*(d[1] - d[0])))
 
 
 def length(homography: Homography, polyline_px) -> float:
-    """Total length of a polyline (mm)."""
+    """Total length of a polyline, in mm."""
     d = homography.to_world(np.asarray(polyline_px, dtype=float))
     return float(np.sum(np.hypot(*(np.diff(d, axis=0).T))))
 
 
 def box(homography: Homography, four_corners_px) -> Box:
     """
-    Width, height and area of an object given by its four corners (mm, mm²).
+    Width, height and area of a four-cornered object.
 
-    We take the MEAN of opposite edges rather than one of them: the user is bound
-    to be a few pixels off on the corners, and averaging halves that slip.
+    Opposite edges get averaged rather than picking one of them: nobody clicks a
+    corner exactly, and averaging halves the slip.
 
-    `rectangularity` gives back what the mean hides: how differently the two
-    opposite edges measure. Moving away from zero points at one of two things —
-    either the object is not on the same plane as the reference, or perspective
-    was not corrected (under a similarity model an oblique view skews the
-    object). Both corrupt the measurement, and both go unnoticed if kept silent.
+    `rectangularity` gives back what that average hides, i.e. how differently the
+    two opposite edges came out. Anything away from zero means one of two things,
+    either the object isn't on the reference plane, or perspective was never
+    corrected (under a similarity model an oblique shot skews the object). Both
+    wreck the measurement, and both are invisible unless we report this.
     """
     d = homography.to_world(np.asarray(four_corners_px, dtype=float))
     if len(d) != 4:
@@ -94,13 +89,12 @@ def box(homography: Homography, four_corners_px) -> Box:
 
 
 def area(homography: Homography, polygon_px) -> float:
-    """Area of a polygon (mm^2). Shoelace formula."""
+    """Polygon area in mm^2, shoelace."""
     d = homography.to_world(np.asarray(polygon_px, dtype=float))
     x, y = d[:, 0], d[:, 1]
     return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
 
 
-# ----------------------------------------------------------------- narrowest passage
 def narrowest_passage(
     homography: Homography,
     free_mask: np.ndarray,
@@ -112,29 +106,27 @@ def narrowest_passage(
     max_samples: int = 4_000_000,
 ) -> Passage:
     """
-    Finds the narrowest point of the free space by scanning the world plane.
+    Scan the world plane for the tightest point of the free space.
 
-    `free_mask`: a bool array the size of the image, True = traversable ground.
-    `axis`: direction of travel (unit vector in world coordinates). If omitted,
-            the principal axis of the free space (PCA) is used.
-    `step_mm`: how often a cross-section is taken, in millimeters.
-    `sample_mm`: sampling spacing along a cross-section — this is the measurement
-            resolution.
-    `edge_margin_mm`: distance to skip at both ends. If None, 5% of the corridor.
+    free_mask is a bool array the size of the image, True where the ground is
+    traversable. axis is the direction of travel in world coordinates; leave it
+    out and we take the principal axis of the free space. step_mm is how often we
+    cut a cross-section, sample_mm the spacing within one, which is effectively
+    the resolution of the answer. edge_margin_mm is how much to skip at each end,
+    defaulting to 5% of the corridor.
 
-    Why the margin exists and why it doesn't default to zero: if the free space is
-    a polygon that ends in a point (hand-drawn masks usually do), the outermost
-    cross-section comes out nearly zero wide and the minimum locks onto it. That
-    zero is not the narrowness of the passage, it is where the mask ends. Dropping
-    the ends prevents that; how much we dropped is reported in `edge_margin_mm`.
+    That margin isn't cosmetic. Hand-drawn masks tend to taper to a point, and
+    the outermost cross-section then comes out nearly zero wide, so the minimum
+    locks onto it. That zero is where the mask ended, not how narrow the passage
+    is. We drop the ends and report how much we dropped in `edge_margin_mm`.
 
-    Method: cross-sections PERPENDICULAR to the axis are taken, and in each one
-    the longest uninterrupted free run is that station's width (in a corridor
-    split by an island the total width would be misleading). The minimum over all
-    stations is the narrowest point of the passage.
+    Each cross-section is cut perpendicular to the axis and its width is the
+    longest uninterrupted free run in it, not the total free length: in a
+    corridor split by an island, the sum would flatter the passage badly. The
+    minimum over all stations is the answer.
 
-    On the AEON side this function answers "will the robot fit through here", and
-    on the kitchen side "how many boxes fit on this shelf" — with the same code.
+    On the AEON side this answers "will the robot get through here", and in the
+    kitchen "how many boxes fit on this shelf", off the same code.
     """
     if step_mm <= 0 or sample_mm <= 0:
         raise ValueError("step_mm and sample_mm must be positive.")
@@ -148,18 +140,16 @@ def narrowest_passage(
     if len(xs) < 10:
         raise ValueError("The free mask is nearly empty; there is no passage to measure.")
 
-    # We carry only the BOUNDARY of the mask into the world, not its interior. The
-    # extreme values that set the scan range are on the boundary by definition;
-    # interior pixels do nothing but reproduce the same numbers. In a typical
-    # corridor this turns a half-million-point transform into a few thousand —
-    # and since Monte Carlo repeats the work hundreds of times, it speeds up the
-    # whole measurement many times over.
+    # Only the boundary of the mask goes through the transform, not the interior.
+    # The extremes that set the scan range are on the boundary by definition and
+    # interior pixels just reproduce the same numbers. For a typical corridor
+    # that turns a half-million-point transform into a few thousand, and since
+    # Monte Carlo runs this hundreds of times over it dominates the runtime.
     world = homography.to_world(np.column_stack([xs, ys]).astype(float))
 
-    # Axis: if not given, the principal axis of the free space (PCA over the
-    # boundary points; the lengthwise direction matches area-based PCA, the
-    # elongation dominates).
     if axis is None:
+        # PCA over the boundary points. The lengthwise direction agrees with what
+        # area-based PCA would give, the elongation dominates either way.
         centered = world - world.mean(axis=0)
         _, _, Vt = np.linalg.svd(centered, full_matrices=False)
         axis = Vt[0]
@@ -171,13 +161,12 @@ def narrowest_passage(
     normal = np.array([-axis[1], axis[0]])
 
     center = world.mean(axis=0)
-    t = (world - center) @ axis          # position along the axis
-    s = (world - center) @ normal        # position perpendicular to the axis
+    t = (world - center) @ axis          # along the axis
+    s = (world - center) @ normal        # across it
 
     t0, t1 = float(t.min()), float(t.max())
     s_half = float(np.abs(s).max()) + 2 * sample_mm
 
-    # A clipped mask at the ends produces a false narrowness; leave a margin.
     if edge_margin_mm is None:
         edge_margin_mm = 0.05 * (t1 - t0)
     t0 += edge_margin_mm
@@ -192,9 +181,9 @@ def narrowest_passage(
             f"The scan grid is too large ({stations.size}×{offsets.size}). "
             f"Increase step_mm or sample_mm.")
 
-    # Carry every cross-section into pixel space in a single transform: one
-    # homography call per station used to be the most expensive part of the
-    # measurement, and Monte Carlo repeats it hundreds of times.
+    # Every cross-section goes to pixel space in one transform. Doing one
+    # homography call per station used to be the single most expensive part of a
+    # measurement, and Monte Carlo repeats the whole thing hundreds of times.
     tracks = center + stations[:, None, None] * axis + offsets[None, :, None] * normal
     section_px = homography.to_image(tracks.reshape(-1, 2))
     u = np.rint(section_px[:, 0]).astype(np.int64)
@@ -225,8 +214,8 @@ def narrowest_passage(
 
 def _boundary_pixels(mask: np.ndarray) -> np.ndarray:
     """
-    Boundary pixels of the mask: free pixels whose four neighbours are NOT all
-    free. Pixels leaning against the image border count as boundary too.
+    Free pixels that have at least one of their four neighbours not free. Pixels
+    leaning on the image border count as boundary too.
     """
     if mask.shape[0] < 3 or mask.shape[1] < 3:
         return mask
@@ -238,10 +227,10 @@ def _boundary_pixels(mask: np.ndarray) -> np.ndarray:
 
 
 def _longest_run(flags: np.ndarray) -> tuple[int, int]:
-    """(start index, length) of the longest consecutive run of True."""
+    """(start index, length) of the longest run of True."""
     if not flags.any():
         return 0, 0
-    # Pad with zeros at both ends and find the transitions
+    # Pad both ends with zeros so every run has a clean transition to find.
     d = np.diff(np.concatenate([[0], flags.view(np.int8), [0]]))
     starts = np.nonzero(d == 1)[0]
     ends = np.nonzero(d == -1)[0]

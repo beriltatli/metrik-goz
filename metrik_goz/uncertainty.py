@@ -1,23 +1,22 @@
 """
-Uncertainty propagation — the real claim of this package.
+Uncertainty propagation. This is the part the package actually stands on.
 
-If a measurement system says "412 mm", that alone is not information;
-"412 ± 9 mm, 95% confidence" is.
+"412 mm" on its own isn't information. "412 ± 9 mm, 95% confidence" is.
 
-The error comes from two separate places, and unless BOTH are counted the
-interval comes out falsely narrow:
+The error comes from two independent places and both have to be counted, or the
+interval comes out too narrow:
 
-  1) pixel noise on the reference corners -> the homography is built wrong
-  2) pixel noise on the points you measure -> the right homography, the wrong spot
+  1. pixel noise on the reference corners, which builds the wrong homography
+  2. pixel noise on the points you clicked, which is the right homography read at
+     the wrong spot
 
-Most "measure from a single photo" code counts only the first (or neither), which
-is why what it calls 95% actually holds 60% of the time. The coverage test
-(`tests/test_coverage.py`) checks exactly this.
+Most single-photo measurement code counts only the first, or neither, which is
+how you end up with something labelled 95% that holds about 60% of the time.
+tests/test_coverage.py exists to check we didn't do that.
 
-Two methods:
-  Monte Carlo : sample both noises, rebuild the homography, measure. Slow but
-                assumption-free — this is the reference.
-  Analytic    : first-order propagation. Fast; validated against MC.
+Two ways to get there. Monte Carlo samples both noise sources, rebuilds the
+homography and re-measures; slow, but it assumes nothing, so it's the reference.
+Analytic is first-order propagation: fast, and validated against MC.
 """
 
 from __future__ import annotations
@@ -27,13 +26,11 @@ from statistics import NormalDist
 
 import numpy as np
 
-from .homography import Homography, _jacobian  # we share the analytic Jacobian
+from .homography import Homography, _jacobian   # same Jacobian the fit uses
 
 
 @dataclass
 class Measurement:
-    """A measurement and its honest error bar."""
-
     value: float
     std: float
     low: float
@@ -51,17 +48,15 @@ class Measurement:
         return float(self.std / abs(self.value)) if self.value else float("inf")
 
 
-# ------------------------------------------------------------------ covariance
 def parameter_covariance(world_mm, image_px, H: np.ndarray, sigma_px: float) -> np.ndarray:
     """
-    Covariance of the homography's 8 parameters: sigma_px^2 * (J^T J)^-1.
+    Covariance of the 8 homography parameters: sigma_px^2 * (J^T J)^-1.
 
-    We compute it from the corner noise given from outside, not from the
-    residuals. The reason: a 4-corner reference has 8 residuals and 8 parameters,
-    so there are zero degrees of freedom — the residuals are near zero by
-    definition and the uncertainty read from them would be meaninglessly small.
-    Corner noise, on the other hand, is a measurable quantity (typically 0.3–0.7
-    pixels for an ArUco corner).
+    Note this uses the corner noise handed in from outside, not the residuals. A
+    4-corner reference has 8 residuals and 8 parameters, so zero degrees of
+    freedom: the residuals are near zero by construction and any uncertainty read
+    off them would be meaninglessly small. Corner noise, on the other hand, is
+    something you can actually measure (0.3 to 0.7 px for an ArUco corner).
     """
     world = np.asarray(world_mm, dtype=float)
     image = np.asarray(image_px, dtype=float)
@@ -75,7 +70,6 @@ def parameter_covariance(world_mm, image_px, H: np.ndarray, sigma_px: float) -> 
     return (sigma_px ** 2) * inverse
 
 
-# ------------------------------------------------------------------ analytic
 def analytic(
     homography: Homography,
     world_mm,
@@ -90,12 +84,12 @@ def analytic(
 ) -> Measurement:
     """
     First-order propagation:
+
         var = grad_p^T Cov_p grad_p  +  sigma_point^2 * ||grad_x||^2
 
-    measure_fn(homography, points_px) -> float
-    If `points_px` is None the measurement does not depend on clicked points (a
-    mask-based passage measurement, say) and only the homography uncertainty is
-    carried.
+    measure_fn(homography, points_px) returns a float. points_px=None means the
+    measurement doesn't depend on clicked points (a mask-based passage, say), so
+    only the homography's own uncertainty gets carried through.
     """
     if sigma_point_px is None:
         sigma_point_px = sigma_px
@@ -105,7 +99,6 @@ def analytic(
     points = None if points_px is None else np.asarray(points_px, dtype=float)
     g0 = float(measure_fn(homography, points))
 
-    # Gradient with respect to the homography parameters
     grad_p = np.zeros(8)
     for i in range(8):
         h = 1e-6 * max(1.0, abs(p0[i]))
@@ -116,7 +109,6 @@ def analytic(
                      - measure_fn(_from_params(backward, homography), points)) / (2 * h)
     var = float(grad_p @ cov @ grad_p)
 
-    # Noise on the clicked points
     if points is not None and sigma_point_px > 0:
         h = 1e-4
         squares = 0.0
@@ -135,7 +127,6 @@ def analytic(
     return Measurement(g0, std, g0 - z * std, g0 + z * std, confidence, "analytic", unit)
 
 
-# ------------------------------------------------------------------ Monte Carlo
 def monte_carlo(
     world_mm,
     image_px,
@@ -151,22 +142,22 @@ def monte_carlo(
     fit_fn=None,
 ) -> Measurement:
     """
-    Perturbs both the reference observations and the measured points and rebuilds
-    the homography every time. The result is the true sampling distribution of
-    the measurement.
+    Perturb the reference observations and the measured points, rebuild the
+    homography each time, re-measure. What comes out is the actual sampling
+    distribution of the measurement.
 
-    The confidence interval is taken from percentiles, so it stays right even
-    when the distribution is not symmetric (far out in extrapolation it isn't).
+    The interval comes from percentiles rather than value ± z*std, so it stays
+    honest when the distribution is skewed, which it is once you extrapolate far
+    from the reference.
 
-    `fit_fn(perturbed_image_px) -> Homography`: supplies the reference MODEL from
-    outside. The default is a four-point correspondence; but in the similarity
-    model built from a single known length (`Homography.from_length`) the
-    observation consists of two points and the remaining two corners are DERIVED
-    from them. Perturbing those two corners independently would invent noise that
-    does not exist; the model itself knows which numbers are really observations,
-    so we leave the fitting to it.
+    fit_fn(perturbed_image_px) -> Homography lets the caller supply the reference
+    model. The default is a plain four-point correspondence, but the similarity
+    model from `Homography.from_length` observes only two points and derives the
+    other two corners from them. Perturbing derived corners independently would
+    invent noise that doesn't exist, and the model is the only thing that knows
+    which numbers are real observations, so it does its own fitting.
 
-    When `fit_fn` is given, `world_mm` may be None.
+    world_mm may be None when fit_fn is given.
     """
     if sigma_point_px is None:
         sigma_point_px = sigma_px
@@ -186,8 +177,8 @@ def monte_carlo(
         fit_fn = lambda observation: Homography.fit(world, observation, refine=refine,
                                                     covariance=False)
 
-    # We generate the noise in one go rather than one draw at a time inside the
-    # loop: same numbers, without the per-call cost of rebuilding the generator.
+    # Draw all the noise up front instead of once per iteration. Same numbers,
+    # without paying to re-enter the generator n times.
     ref_noise = rng.normal(0.0, sigma_px, size=(n, *image.shape))
     point_noise = (None if points is None or sigma_point_px <= 0
                    else rng.normal(0.0, sigma_point_px, size=(n, *points.shape)))
@@ -225,9 +216,8 @@ def monte_carlo(
     )
 
 
-# ------------------------------------------------------------------ helpers
 def _from_params(p: np.ndarray, template: Homography) -> Homography:
-    """A temporary Homography from 8 parameters (for the gradient computation)."""
+    """Throwaway Homography from 8 parameters, only used while differentiating."""
     H = np.append(p, 1.0).reshape(3, 3)
     return Homography(
         H=H, H_inv=np.linalg.inv(H), rms_px=template.rms_px,
@@ -237,7 +227,7 @@ def _from_params(p: np.ndarray, template: Homography) -> Homography:
 
 
 def _z_value(confidence: float) -> float:
-    """Two-sided normal critical value. The standard library is enough, no scipy."""
+    """Two-sided normal critical value. The stdlib has this, no need for scipy."""
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"Confidence must be between 0 and 1, {confidence} given.")
     return float(NormalDist().inv_cdf(0.5 + confidence / 2.0))
