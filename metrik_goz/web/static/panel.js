@@ -1,151 +1,152 @@
 /*
-  metrik-göz paneli — tarayıcı tarafı.
+  metrik-goz panel — the browser side.
 
-  Akış üç adım: fotoğraf → referans → nesne. Mod düğmesi yok; hangi adımdaysan
-  tuvaldeki sürükleme onu çizer. Referans tamamlanmamışsa referansı, tamamsa
-  nesne kutusunu.
+  The flow is three steps: photo → reference → object. There is no mode button;
+  dragging on the canvas draws whatever step you are on. If the reference is not
+  complete it draws the reference, otherwise the object box.
 
-  Burada hiçbir şey ölçülmüyor. Tuval piksel koordinatı topluyor, sunucu
-  ölçüyor. Aynı hesabın iki yerde yazılması, bir gün ikisinin ayrışması demek.
+  Nothing is measured here. The canvas collects pixel coordinates, the server
+  measures. Writing the same computation in two places means that one day the two
+  will drift apart.
 */
 "use strict";
 
-const VERI = JSON.parse(document.getElementById("sunucu-verisi").textContent);
-const $ = (k) => document.getElementById(k);
-const RENK = getComputedStyle(document.documentElement);
-const renk = (ad, yedek) => (RENK.getPropertyValue(ad).trim() || yedek);
+const DATA = JSON.parse(document.getElementById("server-data").textContent);
+const $ = (id) => document.getElementById(id);
+const STYLE = getComputedStyle(document.documentElement);
+const color = (name, fallback) => (STYLE.getPropertyValue(name).trim() || fallback);
 
-const REF_KURALI = {
-  olcek: { nokta: 2, cizim: "cizgi",
-    serit: "Referansın iki ucuna sürükle — yuvarlaksa en geniş yerinden.",
-    not: "Madeni para en pratiği: yuvarlak olduğu için hangi açıyla dursa çapı çaptır. " +
-         "Ölçtüğün nesnenin yanına, mümkünse üstüne koy." },
-  dikdortgen: { nokta: 4, cizim: "dortgen",
-    serit: "Dikdörtgenin dört köşesini sırayla tıkla: sol üst → sağ üst → sağ alt → sol alt.",
-    not: "Dört köşe perspektifi DÜZELTİR. Eğik çekilmiş fotoğrafta tek doğru yol bu." },
-  aruco: { nokta: 4, cizim: "dortgen", otomatik: true,
-    serit: "ArUco işareti otomatik aranıyor…",
-    not: "En doğru yol: köşeler alt piksel doğrulukta okunuyor ve perspektif düzeltiliyor." },
+const REF_RULES = {
+  scale: { points: 2, shape: "line",
+    hint: "Drag between the two ends of the reference — if it is round, across its widest part.",
+    note: "A coin is the handiest: being round, its diameter is its diameter at any angle. " +
+          "Put it next to the object you are measuring, on top of it if you can." },
+  rectangle: { points: 4, shape: "quad",
+    hint: "Click the four corners of the rectangle in order: top left → top right → bottom right → bottom left.",
+    note: "Four corners DO correct perspective. In a tilted photo this is the only right way." },
+  aruco: { points: 4, shape: "quad", automatic: true,
+    hint: "Searching for the ArUco marker…",
+    note: "The most accurate route: corners are read at sub-pixel accuracy and perspective is corrected." },
 };
 
-const durum = {
-  gorsel: null, img: null,
-  ref: { tur: "olcek", noktalar: [], etiket: null },
-  nesne: { koseler: [] },
-  zorlaReferans: false,
-  gorunum: { o: 1, x: 0, y: 0 },
-  sonuc: null, demo: null,
-  ciziliyor: null, suruklenen: null, kaydirma: null,
-  bosluk: false, calisiyor: false,
+const state = {
+  image: null, img: null,
+  ref: { type: "scale", points: [], label: null },
+  object: { corners: [] },
+  forceReference: false,
+  view: { z: 1, x: 0, y: 0 },
+  result: null, demo: null,
+  drawing: null, dragging: null, panning: null,
+  space: false, busy: false,
 };
 
-const tuval = $("tuval");
-const ctx = tuval.getContext("2d");
-const buyutec = $("buyutec");
-const bctx = buyutec.getContext("2d");
-const sarmal = $("tuval-sarmal");
+const canvas = $("canvas");
+const ctx = canvas.getContext("2d");
+const magnifier = $("magnifier");
+const mctx = magnifier.getContext("2d");
+const wrap = $("canvas-wrap");
 
-const refKural = () => REF_KURALI[durum.ref.tur];
-const refTamam = () => durum.ref.noktalar.length === refKural().nokta;
-const nesneTamam = () => durum.nesne.koseler.length === 4;
-const hedef = () => (!refTamam() || durum.zorlaReferans ? "referans" : "nesne");
+const refRule = () => REF_RULES[state.ref.type];
+const refDone = () => state.ref.points.length === refRule().points;
+const objectDone = () => state.object.corners.length === 4;
+const target = () => (!refDone() || state.forceReference ? "reference" : "object");
 
-/* ================================================================ görünüm */
-function tuvaliOlcekle() {
+/* ================================================================ view */
+function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
-  const g = sarmal.clientWidth, y = sarmal.clientHeight;
-  if (!g || !y) return;
-  tuval.width = Math.round(g * dpr);
-  tuval.height = Math.round(y * dpr);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!w || !h) return;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ciz();
+  draw();
 }
 
-function sigdir() {
-  if (!durum.gorsel) return;
-  const g = sarmal.clientWidth, y = sarmal.clientHeight;
-  const o = Math.min(g / durum.gorsel.genislik, y / durum.gorsel.yukseklik) * 0.94;
-  durum.gorunum = { o, x: (g - durum.gorsel.genislik * o) / 2,
-                    y: (y - durum.gorsel.yukseklik * o) / 2 };
-  olcekRozeti();
-  ciz();
+function fitView() {
+  if (!state.image) return;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const z = Math.min(w / state.image.width, h / state.image.height) * 0.94;
+  state.view = { z, x: (w - state.image.width * z) / 2,
+                 y: (h - state.image.height * z) / 2 };
+  zoomBadge();
+  draw();
 }
 
-function yakinlastir(carpan, merkezCss) {
-  if (!durum.gorsel) return;
-  const gor = durum.gorunum;
-  const yeni = Math.min(40, Math.max(0.02, gor.o * carpan));
-  const m = merkezCss || { x: sarmal.clientWidth / 2, y: sarmal.clientHeight / 2 };
-  gor.x = m.x - (m.x - gor.x) * (yeni / gor.o);   // imlecin altındaki nokta sabit kalsın
-  gor.y = m.y - (m.y - gor.y) * (yeni / gor.o);
-  gor.o = yeni;
-  olcekRozeti();
-  ciz();
+function zoomBy(factor, centerCss) {
+  if (!state.image) return;
+  const view = state.view;
+  const next = Math.min(40, Math.max(0.02, view.z * factor));
+  const m = centerCss || { x: wrap.clientWidth / 2, y: wrap.clientHeight / 2 };
+  view.x = m.x - (m.x - view.x) * (next / view.z);   // keep the point under the cursor fixed
+  view.y = m.y - (m.y - view.y) * (next / view.z);
+  view.z = next;
+  zoomBadge();
+  draw();
 }
 
-const olcekRozeti = () => { $("olcek-rozeti").textContent = "%" + Math.round(durum.gorunum.o * 100); };
-const ekrana = (p) => ({ x: p[0] * durum.gorunum.o + durum.gorunum.x,
-                         y: p[1] * durum.gorunum.o + durum.gorunum.y });
-const cssKonum = (o) => {
-  const k = tuval.getBoundingClientRect();
-  return { x: o.clientX - k.left, y: o.clientY - k.top };
+const zoomBadge = () => { $("zoom-badge").textContent = Math.round(state.view.z * 100) + "%"; };
+const toScreen = (p) => ({ x: p[0] * state.view.z + state.view.x,
+                           y: p[1] * state.view.z + state.view.y });
+const cssPosition = (event) => {
+  const rect = canvas.getBoundingClientRect();
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 };
-const goruntuye = (c) => [(c.x - durum.gorunum.x) / durum.gorunum.o,
-                          (c.y - durum.gorunum.y) / durum.gorunum.o];
+const toImage = (c) => [(c.x - state.view.x) / state.view.z,
+                        (c.y - state.view.y) / state.view.z];
 
-/* ================================================================ çizim */
-function ciz() {
-  const g = sarmal.clientWidth, y = sarmal.clientHeight;
-  ctx.clearRect(0, 0, g, y);
-  if (!durum.img) return;
+/* ================================================================ drawing */
+function draw() {
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  if (!state.img) return;
 
-  const gor = durum.gorunum;
+  const view = state.view;
   ctx.save();
-  ctx.translate(gor.x, gor.y);
-  ctx.scale(gor.o, gor.o);
-  ctx.imageSmoothingEnabled = gor.o < 3;
-  ctx.drawImage(durum.img, 0, 0);
+  ctx.translate(view.x, view.y);
+  ctx.scale(view.z, view.z);
+  ctx.imageSmoothingEnabled = view.z < 3;
+  ctx.drawImage(state.img, 0, 0);
   ctx.restore();
 
-  const mavi = renk("--mavi", "#2a78d6");
-  const turuncu = renk("--turuncu", "#eb6834");
-  cizSekil(durum.ref.noktalar, mavi, refKural().cizim, refEtiketi());
-  cizSekil(durum.nesne.koseler, turuncu, "dortgen", null);
-  if (durum.ciziliyor) cizSekil(durum.ciziliyor.noktalar, durum.ciziliyor.renk,
-                                durum.ciziliyor.cizim, null, true);
-  cizKenarOlculeri();
+  const blue = color("--blue", "#2a78d6");
+  const orange = color("--orange", "#eb6834");
+  drawShape(state.ref.points, blue, refRule().shape, refLabel());
+  drawShape(state.object.corners, orange, "quad", null);
+  if (state.drawing) drawShape(state.drawing.points, state.drawing.color,
+                               state.drawing.shape, null, true);
+  drawEdgeSizes();
 }
 
-function refEtiketi() {
-  if (durum.ref.tur !== "olcek" || durum.ref.noktalar.length < 2) return null;
-  const mm = Number($("uzunluk-mm").value);
-  return isFinite(mm) ? sayi(mm, 2) + " mm" : null;
+function refLabel() {
+  if (state.ref.type !== "scale" || state.ref.points.length < 2) return null;
+  const mm = Number($("length-mm").value);
+  return isFinite(mm) ? number(mm, 2) + " mm" : null;
 }
 
-function cizSekil(noktalar, cizgi, bicim, etiket, gecici) {
-  if (!noktalar.length) return;
-  const p = noktalar.map(ekrana);
+function drawShape(points, stroke, shape, label, temporary) {
+  if (!points.length) return;
+  const p = points.map(toScreen);
   ctx.save();
-  ctx.strokeStyle = cizgi;
+  ctx.strokeStyle = stroke;
   ctx.lineWidth = 2;
   ctx.lineJoin = "round";
-  if (gecici) ctx.setLineDash([6, 4]);
+  if (temporary) ctx.setLineDash([6, 4]);
 
   if (p.length > 1) {
     ctx.beginPath();
     ctx.moveTo(p[0].x, p[0].y);
     for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
-    if (bicim === "dortgen" && p.length > 2) {
+    if (shape === "quad" && p.length > 2) {
       ctx.closePath();
-      ctx.fillStyle = cizgi + "1f";
+      ctx.fillStyle = stroke + "1f";
       ctx.fill();
     }
     ctx.stroke();
   }
   ctx.setLineDash([]);
 
-  if (bicim === "cizgi" && p.length === 2) {
-    // Uçlarda dik çentik: nereye kadar ölçtüğün belli olsun.
+  if (shape === "line" && p.length === 2) {
+    // Perpendicular ticks at the ends: make it clear where the measurement stops.
     const dx = p[1].x - p[0].x, dy = p[1].y - p[0].y;
     const n = Math.hypot(dx, dy) || 1;
     const ux = (-dy / n) * 7, uy = (dx / n) * 7;
@@ -155,651 +156,651 @@ function cizSekil(noktalar, cizgi, bicim, etiket, gecici) {
       ctx.lineTo(q.x + ux, q.y + uy);
       ctx.stroke();
     });
-    if (etiket) yaziKutusu(etiket, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2 - 16, cizgi);
+    if (label) textBox(label, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2 - 16, stroke);
   }
-  if (!gecici) p.forEach((q) => cizTutamak(q, cizgi));
+  if (!temporary) p.forEach((q) => drawHandle(q, stroke));
   ctx.restore();
 }
 
-function cizTutamak(p, dolgu) {
+function drawHandle(p, fill) {
   ctx.beginPath();
   ctx.arc(p.x, p.y, 5.5, 0, Math.PI * 2);
-  ctx.fillStyle = dolgu;
+  ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = renk("--yuzey", "#fff");
+  ctx.strokeStyle = color("--surface", "#fff");
   ctx.stroke();
 }
 
-function yaziKutusu(metin, x, y, dolgu) {
+function textBox(text, x, y, fill) {
   ctx.save();
   ctx.font = "600 12px ui-monospace, Menlo, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const g = ctx.measureText(metin).width;
-  ctx.fillStyle = renk("--yuzey", "#fff");
+  const w = ctx.measureText(text).width;
+  ctx.fillStyle = color("--surface", "#fff");
   ctx.globalAlpha = 0.92;
-  ctx.fillRect(x - g / 2 - 5, y - 9, g + 10, 18);
+  ctx.fillRect(x - w / 2 - 5, y - 9, w + 10, 18);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = dolgu;
-  ctx.fillText(metin, x, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x, y);
   ctx.restore();
 }
 
-function cizKenarOlculeri() {
-  const s = durum.sonuc;
-  if (!s || s.tur !== "kutu" || !nesneTamam() || !s.kutu) return;
-  const p = durum.nesne.koseler.map(ekrana);
-  const turuncu = renk("--turuncu", "#eb6834");
-  s.kutu.kenarlar_mm.forEach((mm, i) => {
+function drawEdgeSizes() {
+  const s = state.result;
+  if (!s || s.type !== "box" || !objectDone() || !s.box) return;
+  const p = state.object.corners.map(toScreen);
+  const orange = color("--orange", "#eb6834");
+  s.box.edges_mm.forEach((mm, i) => {
     const a = p[i], b = p[(i + 1) % 4];
-    yaziKutusu(sayi(mm) + " mm", (a.x + b.x) / 2, (a.y + b.y) / 2, turuncu);
+    textBox(number(mm) + " mm", (a.x + b.x) / 2, (a.y + b.y) / 2, orange);
   });
 }
 
-function buyuteciCiz(css) {
-  if (!durum.img || durum.kaydirma) { buyutec.style.display = "none"; return; }
-  const KAT = 6, B = 132, ip = goruntuye(css), yari = B / (2 * KAT);
-  bctx.save();
-  bctx.clearRect(0, 0, B, B);
-  bctx.beginPath();
-  bctx.arc(B / 2, B / 2, B / 2, 0, Math.PI * 2);
-  bctx.clip();
-  bctx.fillStyle = renk("--yuzey2", "#eee");
-  bctx.fillRect(0, 0, B, B);
-  bctx.imageSmoothingEnabled = false;
-  bctx.drawImage(durum.img, ip[0] - yari, ip[1] - yari, 2 * yari, 2 * yari, 0, 0, B, B);
-  bctx.strokeStyle = renk("--turuncu", "#eb6834");
-  bctx.lineWidth = 1;
-  bctx.beginPath();
-  bctx.moveTo(B / 2, B / 2 - 12); bctx.lineTo(B / 2, B / 2 + 12);
-  bctx.moveTo(B / 2 - 12, B / 2); bctx.lineTo(B / 2 + 12, B / 2);
-  bctx.stroke();
-  bctx.restore();
-  buyutec.style.display = "block";
-  buyutec.style.left = (css.x > sarmal.clientWidth - 170 ? css.x - 150 : css.x + 18) + "px";
-  buyutec.style.top = Math.min(Math.max(css.y - 66, 6), sarmal.clientHeight - 138) + "px";
+function drawMagnifier(css) {
+  if (!state.img || state.panning) { magnifier.style.display = "none"; return; }
+  const ZOOM = 6, SIZE = 132, point = toImage(css), half = SIZE / (2 * ZOOM);
+  mctx.save();
+  mctx.clearRect(0, 0, SIZE, SIZE);
+  mctx.beginPath();
+  mctx.arc(SIZE / 2, SIZE / 2, SIZE / 2, 0, Math.PI * 2);
+  mctx.clip();
+  mctx.fillStyle = color("--surface2", "#eee");
+  mctx.fillRect(0, 0, SIZE, SIZE);
+  mctx.imageSmoothingEnabled = false;
+  mctx.drawImage(state.img, point[0] - half, point[1] - half, 2 * half, 2 * half, 0, 0, SIZE, SIZE);
+  mctx.strokeStyle = color("--orange", "#eb6834");
+  mctx.lineWidth = 1;
+  mctx.beginPath();
+  mctx.moveTo(SIZE / 2, SIZE / 2 - 12); mctx.lineTo(SIZE / 2, SIZE / 2 + 12);
+  mctx.moveTo(SIZE / 2 - 12, SIZE / 2); mctx.lineTo(SIZE / 2 + 12, SIZE / 2);
+  mctx.stroke();
+  mctx.restore();
+  magnifier.style.display = "block";
+  magnifier.style.left = (css.x > wrap.clientWidth - 170 ? css.x - 150 : css.x + 18) + "px";
+  magnifier.style.top = Math.min(Math.max(css.y - 66, 6), wrap.clientHeight - 138) + "px";
 }
 
-/* ================================================================ tuval olayları */
-function yakinTutamak(css) {
-  const listeler = [durum.nesne.koseler, durum.ref.noktalar];
-  for (const liste of listeler) {
-    if (liste === durum.ref.noktalar && refKural().otomatik) continue;
-    for (let i = liste.length - 1; i >= 0; i--) {
-      const e = ekrana(liste[i]);
-      if (Math.hypot(e.x - css.x, e.y - css.y) <= 11) return { liste, i };
+/* ================================================================ canvas events */
+function nearbyHandle(css) {
+  const lists = [state.object.corners, state.ref.points];
+  for (const list of lists) {
+    if (list === state.ref.points && refRule().automatic) continue;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const s = toScreen(list[i]);
+      if (Math.hypot(s.x - css.x, s.y - css.y) <= 11) return { list, i };
     }
   }
   return null;
 }
 
-tuval.addEventListener("pointerdown", (o) => {
-  if (!durum.img) return;
-  const css = cssKonum(o);
-  if (o.button === 1 || o.button === 2 || durum.bosluk) {
-    durum.kaydirma = { css, gor: { ...durum.gorunum } };
-    tuval.classList.add("kaydiriyor");
-    tuval.setPointerCapture(o.pointerId);
-    o.preventDefault();
+canvas.addEventListener("pointerdown", (event) => {
+  if (!state.img) return;
+  const css = cssPosition(event);
+  if (event.button === 1 || event.button === 2 || state.space) {
+    state.panning = { css, view: { ...state.view } };
+    canvas.classList.add("panning");
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
     return;
   }
-  if (o.button !== 0) return;
+  if (event.button !== 0) return;
 
-  const tut = yakinTutamak(css);
-  if (tut) {
-    durum.suruklenen = { ...tut, tasindi: false };
-    tuval.setPointerCapture(o.pointerId);
+  const handle = nearbyHandle(css);
+  if (handle) {
+    state.dragging = { ...handle, moved: false };
+    canvas.setPointerCapture(event.pointerId);
     return;
   }
 
-  const nokta = goruntuye(css);
-  if (hedef() === "referans") {
-    if (refKural().otomatik) { bilgi("ArUco köşeleri otomatik bulunuyor."); return; }
-    if (durum.ref.tur === "olcek") {
-      durum.ciziliyor = { tur: "ref-cizgi", cizim: "cizgi", bas: nokta,
-                          noktalar: [nokta, nokta], renk: renk("--mavi", "#2a78d6") };
-      tuval.setPointerCapture(o.pointerId);
+  const point = toImage(css);
+  if (target() === "reference") {
+    if (refRule().automatic) { status("The ArUco corners are found automatically."); return; }
+    if (state.ref.type === "scale") {
+      state.drawing = { kind: "ref-line", shape: "line", start: point,
+                        points: [point, point], color: color("--blue", "#2a78d6") };
+      canvas.setPointerCapture(event.pointerId);
     } else {
-      // Dikdörtgen köşeleri tek tek tıklanır: dörtgen serbest, kutu değil.
-      if (durum.ref.noktalar.length >= 4) durum.ref.noktalar.length = 0;
-      durum.ref.noktalar.push(nokta);
-      durum.zorlaReferans = durum.ref.noktalar.length < 4;
-      degisti();
+      // Rectangle corners are clicked one by one: it is a free quadrilateral, not a box.
+      if (state.ref.points.length >= 4) state.ref.points.length = 0;
+      state.ref.points.push(point);
+      state.forceReference = state.ref.points.length < 4;
+      changed();
     }
   } else {
-    durum.ciziliyor = { tur: "nesne", cizim: "dortgen", bas: nokta,
-                        noktalar: kutuKoseleri(nokta, nokta),
-                        renk: renk("--turuncu", "#eb6834") };
-    tuval.setPointerCapture(o.pointerId);
+    state.drawing = { kind: "object", shape: "quad", start: point,
+                      points: boxCorners(point, point),
+                      color: color("--orange", "#eb6834") };
+    canvas.setPointerCapture(event.pointerId);
   }
 });
 
-const kutuKoseleri = (a, b) => [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
+const boxCorners = (a, b) => [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]];
 
-tuval.addEventListener("pointermove", (o) => {
-  const css = cssKonum(o);
-  if (durum.kaydirma) {
-    durum.gorunum.x = durum.kaydirma.gor.x + (css.x - durum.kaydirma.css.x);
-    durum.gorunum.y = durum.kaydirma.gor.y + (css.y - durum.kaydirma.css.y);
-    ciz();
-  } else if (durum.suruklenen) {
-    durum.suruklenen.liste[durum.suruklenen.i] = goruntuye(css);
-    durum.suruklenen.tasindi = true;
-    ciz();
-  } else if (durum.ciziliyor) {
-    const p = goruntuye(css);
-    durum.ciziliyor.noktalar = durum.ciziliyor.cizim === "cizgi"
-      ? [durum.ciziliyor.bas, p] : kutuKoseleri(durum.ciziliyor.bas, p);
-    ciz();
+canvas.addEventListener("pointermove", (event) => {
+  const css = cssPosition(event);
+  if (state.panning) {
+    state.view.x = state.panning.view.x + (css.x - state.panning.css.x);
+    state.view.y = state.panning.view.y + (css.y - state.panning.css.y);
+    draw();
+  } else if (state.dragging) {
+    state.dragging.list[state.dragging.i] = toImage(css);
+    state.dragging.moved = true;
+    draw();
+  } else if (state.drawing) {
+    const p = toImage(css);
+    state.drawing.points = state.drawing.shape === "line"
+      ? [state.drawing.start, p] : boxCorners(state.drawing.start, p);
+    draw();
   }
-  buyuteciCiz(css);
+  drawMagnifier(css);
 });
 
-function suruklemeyiBitir(o) {
-  if (durum.kaydirma) { durum.kaydirma = null; tuval.classList.remove("kaydiriyor"); }
+function endDrag(event) {
+  if (state.panning) { state.panning = null; canvas.classList.remove("panning"); }
 
-  if (durum.ciziliyor) {
-    const c = durum.ciziliyor;
-    durum.ciziliyor = null;
-    const a = ekrana(c.noktalar[0]), b = ekrana(c.noktalar[c.cizim === "cizgi" ? 1 : 2]);
+  if (state.drawing) {
+    const d = state.drawing;
+    state.drawing = null;
+    const a = toScreen(d.points[0]), b = toScreen(d.points[d.shape === "line" ? 1 : 2]);
     if (Math.hypot(b.x - a.x, b.y - a.y) < 8) {
-      bilgi("Çok küçük — basılı tutup sürükle.");
-      ciz();
-    } else if (c.tur === "ref-cizgi") {
-      durum.ref.noktalar = c.noktalar;
-      durum.zorlaReferans = false;
-      degisti();
+      status("Too small — press and drag.");
+      draw();
+    } else if (d.kind === "ref-line") {
+      state.ref.points = d.points;
+      state.forceReference = false;
+      changed();
     } else {
-      durum.nesne.koseler = c.noktalar;
-      degisti();
+      state.object.corners = d.points;
+      changed();
     }
   }
 
-  if (durum.suruklenen) {
-    const tasindi = durum.suruklenen.tasindi;
-    durum.suruklenen = null;
-    if (tasindi) degisti();
+  if (state.dragging) {
+    const moved = state.dragging.moved;
+    state.dragging = null;
+    if (moved) changed();
   }
-  if (o && tuval.hasPointerCapture(o.pointerId)) tuval.releasePointerCapture(o.pointerId);
+  if (event && canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
 }
-tuval.addEventListener("pointerup", suruklemeyiBitir);
-tuval.addEventListener("pointercancel", suruklemeyiBitir);
-tuval.addEventListener("contextmenu", (o) => o.preventDefault());
-tuval.addEventListener("pointerleave", () => { buyutec.style.display = "none"; });
-tuval.addEventListener("wheel", (o) => {
-  if (!durum.img) return;
-  o.preventDefault();
-  yakinlastir(Math.exp(-o.deltaY * 0.0022), cssKonum(o));
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+canvas.addEventListener("pointerleave", () => { magnifier.style.display = "none"; });
+canvas.addEventListener("wheel", (event) => {
+  if (!state.img) return;
+  event.preventDefault();
+  zoomBy(Math.exp(-event.deltaY * 0.0022), cssPosition(event));
 }, { passive: false });
 
-window.addEventListener("keydown", (o) => {
-  const yaziyor = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (o.code === "Space" && !yaziyor) {
-    durum.bosluk = true; tuval.classList.add("kaydir"); o.preventDefault(); return;
+window.addEventListener("keydown", (event) => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (event.code === "Space" && !typing) {
+    state.space = true; canvas.classList.add("pan"); event.preventDefault(); return;
   }
-  if (yaziyor) return;
-  if (o.key.toLowerCase() === "f") sigdir();
-  else if (o.key === "Escape") { durum.ciziliyor = null; ciz(); }
+  if (typing) return;
+  if (event.key.toLowerCase() === "f") fitView();
+  else if (event.key === "Escape") { state.drawing = null; draw(); }
 });
-window.addEventListener("keyup", (o) => {
-  if (o.code === "Space") { durum.bosluk = false; tuval.classList.remove("kaydir"); }
+window.addEventListener("keyup", (event) => {
+  if (event.code === "Space") { state.space = false; canvas.classList.remove("pan"); }
 });
-window.addEventListener("resize", tuvaliOlcekle);
+window.addEventListener("resize", resizeCanvas);
 
-/* ---------------------------------------------------------------- dosya */
-["dragenter", "dragover"].forEach((ad) => window.addEventListener(ad, (o) => {
-  if (!o.dataTransfer || ![...o.dataTransfer.types].includes("Files")) return;
-  o.preventDefault();
-  $("birak").classList.remove("gizli");
-  $("birak").classList.add("uzerinde");
+/* ---------------------------------------------------------------- files */
+["dragenter", "dragover"].forEach((name) => window.addEventListener(name, (event) => {
+  if (!event.dataTransfer || ![...event.dataTransfer.types].includes("Files")) return;
+  event.preventDefault();
+  $("drop").classList.remove("is-hidden");
+  $("drop").classList.add("over");
 }));
-["dragleave", "drop"].forEach((ad) => window.addEventListener(ad, (o) => {
-  if (ad === "dragleave" && o.relatedTarget) return;
-  $("birak").classList.remove("uzerinde");
-  if (durum.gorsel) $("birak").classList.add("gizli");
+["dragleave", "drop"].forEach((name) => window.addEventListener(name, (event) => {
+  if (name === "dragleave" && event.relatedTarget) return;
+  $("drop").classList.remove("over");
+  if (state.image) $("drop").classList.add("is-hidden");
 }));
-window.addEventListener("drop", (o) => {
-  const d = o.dataTransfer && o.dataTransfer.files[0];
-  if (d) { o.preventDefault(); gorselYukle(d); }
+window.addEventListener("drop", (event) => {
+  const file = event.dataTransfer && event.dataTransfer.files[0];
+  if (file) { event.preventDefault(); uploadImage(file); }
 });
-window.addEventListener("paste", (o) => {
-  const oge = [...(o.clipboardData ? o.clipboardData.items : [])]
+window.addEventListener("paste", (event) => {
+  const item = [...(event.clipboardData ? event.clipboardData.items : [])]
     .find((x) => x.type.startsWith("image/"));
-  if (oge) gorselYukle(oge.getAsFile());
+  if (item) uploadImage(item.getAsFile());
 });
 
-/* ================================================================ arayüz bağları */
-$("dosya-sec").onclick = $("dosya-sec-buyuk").onclick =
-  $("yeni-olcum").onclick = () => $("dosya").click();
-$("dosya").onchange = (o) => o.target.files[0] && gorselYukle(o.target.files[0]);
-$("sigdir").onclick = sigdir;
-$("yakinlas").onclick = () => yakinlastir(1.3);
-$("uzaklas").onclick = () => yakinlastir(1 / 1.3);
-$("aruco-bul").onclick = arucoBul;
-$("ref-yeniden").onclick = () => {
-  durum.ref.noktalar = [];
-  durum.ref.etiket = null;
-  durum.zorlaReferans = true;
-  degisti();
+/* ================================================================ interface bindings */
+$("choose-file").onclick = $("choose-file-big").onclick =
+  $("new-measurement").onclick = () => $("file").click();
+$("file").onchange = (event) => event.target.files[0] && uploadImage(event.target.files[0]);
+$("fit").onclick = fitView;
+$("zoom-in").onclick = () => zoomBy(1.3);
+$("zoom-out").onclick = () => zoomBy(1 / 1.3);
+$("aruco-find").onclick = findAruco;
+$("ref-redraw").onclick = () => {
+  state.ref.points = [];
+  state.ref.label = null;
+  state.forceReference = true;
+  changed();
 };
-$("nesne-yeniden").onclick = () => { durum.nesne.koseler = []; degisti(); };
+$("object-redraw").onclick = () => { state.object.corners = []; changed(); };
 
-// Kenar çubuğundaki belirsizlik kartı "gelişmiş" ayarlarının aynası.
-function belirsizlikKarti() {
-  const guven = Number($("guven").value);
-  $("kenar-guven").textContent = yuzde(guven, 0);
-  $("kenar-cubuk").style.width = `${(guven * 100).toFixed(0)}%`;
-  $("kenar-not").textContent =
-    `σ ${sayi(Number($("sigma").value), 1)} px · ${$("mc-n").value} MC örneği`;
+// The uncertainty card in the sidebar mirrors the "advanced" settings.
+function uncertaintyCard() {
+  const confidence = Number($("confidence").value);
+  $("side-confidence").textContent = percent(confidence, 0);
+  $("side-bar").style.width = `${(confidence * 100).toFixed(0)}%`;
+  $("side-note").textContent =
+    `σ ${number(Number($("sigma").value), 1)} px · ${$("mc-n").value} MC samples`;
 }
-["sigma", "guven", "mc-n"].forEach((k) => $(k).addEventListener("input", belirsizlikKarti));
+["sigma", "confidence", "mc-n"].forEach((id) => $(id).addEventListener("input", uncertaintyCard));
 
-document.querySelectorAll("[data-ornek]").forEach((d) =>
-  d.onclick = () => ornekYukle(d.dataset.ornek));
+document.querySelectorAll("[data-sample]").forEach((button) =>
+  button.onclick = () => loadSample(button.dataset.sample));
 
-$("ref-turleri").onclick = (o) => {
-  const d = o.target.closest("[data-ref]");
-  if (!d || d.dataset.ref === durum.ref.tur) return;
-  durum.ref = { tur: d.dataset.ref, noktalar: [], etiket: null };
-  durum.zorlaReferans = true;
-  $("sigma").value = d.dataset.ref === "aruco" ? VERI.sigmalar.aruco : VERI.sigmalar.elle;
-  degisti();
-  if (d.dataset.ref === "aruco" && durum.gorsel) arucoBul();
+$("ref-types").onclick = (event) => {
+  const button = event.target.closest("[data-ref]");
+  if (!button || button.dataset.ref === state.ref.type) return;
+  state.ref = { type: button.dataset.ref, points: [], label: null };
+  state.forceReference = true;
+  $("sigma").value = button.dataset.ref === "aruco" ? DATA.sigmas.aruco : DATA.sigmas.manual;
+  changed();
+  if (button.dataset.ref === "aruco" && state.image) findAruco();
 };
 
-$("uzunluk-ad").onchange = () => {
-  const s = $("uzunluk-ad").selectedOptions[0];
-  if (s.dataset.mm) $("uzunluk-mm").value = s.dataset.mm;
-  else $("uzunluk-mm").focus();
-  degisti();
+$("length-name").onchange = () => {
+  const option = $("length-name").selectedOptions[0];
+  if (option.dataset.mm) $("length-mm").value = option.dataset.mm;
+  else $("length-mm").focus();
+  changed();
 };
-$("uzunluk-mm").oninput = () => {
-  // Elle bir sayı yazıldığında hazır seçim artık geçerli değil.
-  const s = $("uzunluk-ad").selectedOptions[0];
-  if (s && s.dataset.mm && Number(s.dataset.mm) !== Number($("uzunluk-mm").value)) {
-    $("uzunluk-ad").value = "";
+$("length-mm").oninput = () => {
+  // Once a number is typed by hand the ready-made choice no longer applies.
+  const option = $("length-name").selectedOptions[0];
+  if (option && option.dataset.mm && Number(option.dataset.mm) !== Number($("length-mm").value)) {
+    $("length-name").value = "";
   }
-  ciz();
+  draw();
 };
-$("uzunluk-mm").onchange = degisti;
-$("nesne-ad").onchange = () => {
-  const ad = $("nesne-ad").value;
-  const ozel = !ad;
-  $("dikdortgen-olculeri").hidden = !ozel;
-  if (!ozel && VERI.nesneler[ad]) {
-    $("dik-gen").value = VERI.nesneler[ad][0];
-    $("dik-yuk").value = VERI.nesneler[ad][1];
+$("length-mm").onchange = changed;
+$("object-name").onchange = () => {
+  const name = $("object-name").value;
+  const custom = !name;
+  $("rect-sizes").hidden = !custom;
+  if (!custom && DATA.objects[name]) {
+    $("rect-w").value = DATA.objects[name][0];
+    $("rect-h").value = DATA.objects[name][1];
   }
-  degisti();
+  changed();
 };
-["dik-gen", "dik-yuk", "aruco-kenar", "sigma", "guven", "mc-n"].forEach(
-  (k) => { $(k).onchange = degisti; });
+["rect-w", "rect-h", "aruco-edge", "sigma", "confidence", "mc-n"].forEach(
+  (id) => { $(id).onchange = changed; });
 
-/* ================================================================ durum akışı */
-let zamanlayici = null;
+/* ================================================================ state flow */
+let timer = null;
 
-function degisti() {
-  arayuzuTazele();
-  clearTimeout(zamanlayici);
-  if (durum.gorsel && refTamam() && nesneTamam()) {
-    zamanlayici = setTimeout(olc, 60);      // sürükleme bitince tek istek
+function changed() {
+  refreshInterface();
+  clearTimeout(timer);
+  if (state.image && refDone() && objectDone()) {
+    timer = setTimeout(runMeasurement, 60);      // one request once the drag ends
   } else {
-    durum.sonuc = null;
-    sonucuTemizle();
-    ciz();
+    state.result = null;
+    clearResult();
+    draw();
   }
 }
 
-function arayuzuTazele() {
-  document.querySelectorAll("[data-ref]").forEach((d) =>
-    d.classList.toggle("secili", d.dataset.ref === durum.ref.tur));
-  ["olcek", "dikdortgen", "aruco"].forEach((a) =>
-    $("ref-" + a).hidden = durum.ref.tur !== a);
+function refreshInterface() {
+  document.querySelectorAll("[data-ref]").forEach((button) =>
+    button.classList.toggle("selected", button.dataset.ref === state.ref.type));
+  ["scale", "rectangle", "aruco"].forEach((name) =>
+    $("ref-" + name).hidden = state.ref.type !== name);
 
-  const kural = refKural();
-  const foto = !!durum.gorsel;
-  const aktif = !foto ? "foto" : hedef() === "referans" ? "ref" : "nesne";
+  const rule = refRule();
+  const hasPhoto = !!state.image;
+  const active = !hasPhoto ? "photo" : target() === "reference" ? "ref" : "object";
 
-  [["adim-foto", "foto", foto],
-   ["adim-ref", "ref", refTamam()],
-   ["adim-nesne", "nesne", nesneTamam()]].forEach(([kimlik, kisa, tamam]) => {
-    const el = $(kimlik);
-    el.classList.toggle("tamam", tamam);
-    el.classList.toggle("etkin", aktif === kisa && !tamam);
-    $(kisa + "-onay").hidden = !tamam;
-    // Kenar çubuğundaki akış listesi aynı durumu gösteriyor.
-    const nav = document.querySelector(`[data-akis="${kisa}"]`);
+  [["step-photo", "photo", hasPhoto],
+   ["step-ref", "ref", refDone()],
+   ["step-object", "object", objectDone()]].forEach(([id, short, done]) => {
+    const el = $(id);
+    el.classList.toggle("done", done);
+    el.classList.toggle("active", active === short && !done);
+    $(short + "-check").hidden = !done;
+    // The flow list in the sidebar shows the same state.
+    const nav = document.querySelector(`[data-flow="${short}"]`);
     if (nav) {
-      nav.classList.toggle("tamam", tamam);
-      nav.classList.toggle("etkin", aktif === kisa && !tamam);
+      nav.classList.toggle("done", done);
+      nav.classList.toggle("active", active === short && !done);
     }
   });
 
-  $("foto-not").textContent = foto
-    ? `${durum.gorsel.ad} · ${durum.gorsel.genislik}×${durum.gorsel.yukseklik} px`
-    : "Sürükle-bırak ve ⌘V ile yapıştırma da çalışır.";
-  $("dosya-sec").textContent = foto ? "Başka fotoğraf seç…" : "Fotoğraf seç…";
+  $("photo-note").textContent = hasPhoto
+    ? `${state.image.name} · ${state.image.width}×${state.image.height} px`
+    : "Drag-and-drop and pasting with ⌘V work too.";
+  $("choose-file").textContent = hasPhoto ? "Choose another photo…" : "Choose a photo…";
 
-  const refNot = durum.ref.etiket && refTamam()
-    ? `${durum.ref.etiket}${durum.sonuc && durum.sonuc.referans.piksel_boyu
-        ? ` · görüntüde ${Math.round(durum.sonuc.referans.piksel_boyu)} px` : ""}`
-    : kural.not;
-  $("ref-not").textContent = refNot;
-  $("ref-not").classList.toggle("vurgu", refTamam());
-  $("ref-yeniden").hidden = !durum.ref.noktalar.length || kural.otomatik;
+  const refNote = state.ref.label && refDone()
+    ? `${state.ref.label}${state.result && state.result.reference.pixel_length
+        ? ` · ${Math.round(state.result.reference.pixel_length)} px in the image` : ""}`
+    : rule.note;
+  $("ref-note").textContent = refNote;
+  $("ref-note").classList.toggle("highlight", refDone());
+  $("ref-redraw").hidden = !state.ref.points.length || rule.automatic;
 
-  $("nesne-not").textContent = nesneTamam()
-    ? "Köşeleri sürükleyerek düzeltebilirsin; ölçü anında yenilenir."
-    : "Ölçmek istediğin nesnenin üstüne bir kutu çiz (basılı tutup sürükle).";
-  $("nesne-yeniden").hidden = !nesneTamam();
+  $("object-note").textContent = objectDone()
+    ? "You can drag the corners to correct them; the measurement refreshes instantly."
+    : "Draw a box over the object you want to measure (press and drag).";
+  $("object-redraw").hidden = !objectDone();
 
-  const serit = $("serit");
-  if (!foto) serit.hidden = true;
-  else if (hedef() === "referans" && !kural.otomatik) {
-    serit.hidden = false;
-    serit.textContent = durum.ref.tur === "dikdortgen"
-      ? `${kural.serit}  (${durum.ref.noktalar.length}/4)` : kural.serit;
-  } else if (!nesneTamam()) {
-    serit.hidden = false;
-    serit.textContent = "Nesnenin üstüne bir kutu çiz.";
-  } else serit.hidden = true;
+  const hint = $("hint");
+  if (!hasPhoto) hint.hidden = true;
+  else if (target() === "reference" && !rule.automatic) {
+    hint.hidden = false;
+    hint.textContent = state.ref.type === "rectangle"
+      ? `${rule.hint}  (${state.ref.points.length}/4)` : rule.hint;
+  } else if (!objectDone()) {
+    hint.hidden = false;
+    hint.textContent = "Draw a box over the object.";
+  } else hint.hidden = true;
 
-  olcekRozeti();
-  ciz();
+  zoomBadge();
+  draw();
 }
 
-const bilgi = (m) => { $("durum-metni").textContent = m; };
+const status = (message) => { $("status-text").textContent = message; };
 
-/* ================================================================ sunucu */
-async function istek(yol, secenek) {
-  const yanit = await fetch(yol, secenek);
-  const govde = await yanit.json().catch(() => ({}));
-  if (!yanit.ok) throw new Error(govde.hata || `Sunucu hatası (${yanit.status}).`);
-  return govde;
+/* ================================================================ server */
+async function request(path, options) {
+  const response = await fetch(path, options);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `Server error (${response.status}).`);
+  return body;
 }
 
-async function gorselYukle(dosya) {
-  bilgi("Fotoğraf yükleniyor…");
+async function uploadImage(file) {
+  status("Uploading the photo…");
   try {
     const form = new FormData();
-    form.append("dosya", dosya);
-    await gorseliBagla(await istek("/api/gorsel", { method: "POST", body: form }));
-    durum.demo = null;
-    bilgi("Hazır.");
-    if (refKural().otomatik) arucoBul();
-  } catch (h) { hataGoster(h.message); bilgi("Yükleme başarısız."); }
+    form.append("file", file);
+    await attachImage(await request("/api/image", { method: "POST", body: form }));
+    state.demo = null;
+    status("Ready.");
+    if (refRule().automatic) findAruco();
+  } catch (error) { showError(error.message); status("Upload failed."); }
 }
 
-function gorseliBagla(g) {
-  return new Promise((coz, red) => {
+function attachImage(info) {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      durum.gorsel = g;
-      durum.img = img;
-      durum.ref.noktalar = [];
-      durum.ref.etiket = null;
-      durum.nesne.koseler = [];
-      durum.sonuc = null;
-      durum.zorlaReferans = false;
-      $("birak").classList.add("gizli");
-      sonucuTemizle();
-      sigdir();
-      arayuzuTazele();
-      coz();
+      state.image = info;
+      state.img = img;
+      state.ref.points = [];
+      state.ref.label = null;
+      state.object.corners = [];
+      state.result = null;
+      state.forceReference = false;
+      $("drop").classList.add("is-hidden");
+      clearResult();
+      fitView();
+      refreshInterface();
+      resolve();
     };
-    img.onerror = () => red(new Error("Fotoğraf tarayıcıda açılamadı."));
-    img.src = g.url;
+    img.onerror = () => reject(new Error("The photo could not be opened in the browser."));
+    img.src = info.url;
   });
 }
 
-async function arucoBul() {
-  if (!durum.gorsel) return;
-  bilgi("ArUco işareti aranıyor…");
+async function findAruco() {
+  if (!state.image) return;
+  status("Looking for an ArUco marker…");
   try {
-    const y = await istek("/api/aruco", {
+    const found = await request("/api/aruco", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gorsel_id: durum.gorsel.kimlik,
-                             kenar_mm: Number($("aruco-kenar").value) }),
+      body: JSON.stringify({ image_id: state.image.id,
+                             edge_mm: Number($("aruco-edge").value) }),
     });
-    durum.ref = { tur: "aruco", noktalar: y.koseler, etiket: y.etiket };
-    durum.zorlaReferans = false;
-    $("sigma").value = y.sigma_px;
-    bilgi(y.etiket + " bulundu.");
-    degisti();
-  } catch (h) {
-    hataGoster(h.message);
-    bilgi("İşaret bulunamadı.");
+    state.ref = { type: "aruco", points: found.corners, label: found.label };
+    state.forceReference = false;
+    $("sigma").value = found.sigma_px;
+    status(found.label + " found.");
+    changed();
+  } catch (error) {
+    showError(error.message);
+    status("No marker found.");
   }
 }
 
-async function ornekYukle(ad) {
-  bilgi("Örnek sahne üretiliyor…");
+async function loadSample(name) {
+  status("Generating the sample scene…");
   try {
-    const s = await istek("/api/ornek", {
+    const scene = await request("/api/sample", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ad }),
+      body: JSON.stringify({ name }),
     });
-    await gorseliBagla(s);
-    durum.demo = s;
-    document.querySelector(`[data-ref="${s.referans.tur}"]`).classList.add("secili");
-    durum.ref.tur = s.referans.tur;
-    if (s.referans.ad) $("uzunluk-ad").value = s.referans.ad;
-    if (s.referans.uzunluk_mm) $("uzunluk-mm").value = s.referans.uzunluk_mm;
-    $("sigma").value = VERI.sigmalar.elle;
-    durum.ref.noktalar = (s.ipucu.referans || []).map((p) => [p[0], p[1]]);
-    durum.nesne.koseler = (s.ipucu.kutu || []).map((p) => [p[0], p[1]]);
-    bilgi(s.aciklama);
-    degisti();
-  } catch (h) { hataGoster(h.message); bilgi("Örnek yüklenemedi."); }
+    await attachImage(scene);
+    state.demo = scene;
+    document.querySelector(`[data-ref="${scene.reference.type}"]`).classList.add("selected");
+    state.ref.type = scene.reference.type;
+    if (scene.reference.name) $("length-name").value = scene.reference.name;
+    if (scene.reference.length_mm) $("length-mm").value = scene.reference.length_mm;
+    $("sigma").value = DATA.sigmas.manual;
+    state.ref.points = (scene.hint.reference || []).map((p) => [p[0], p[1]]);
+    state.object.corners = (scene.hint.box || []).map((p) => [p[0], p[1]]);
+    status(scene.description);
+    changed();
+  } catch (error) { showError(error.message); status("The sample could not be loaded."); }
 }
 
-function istekGovdesi() {
-  const ref = { tur: durum.ref.tur };
-  if (durum.ref.tur === "olcek") {
-    ref.uzunluk_mm = Number($("uzunluk-mm").value);
-    ref.ad = $("uzunluk-ad").value || null;
-    ref.noktalar = durum.ref.noktalar;
-  } else if (durum.ref.tur === "dikdortgen") {
-    const ad = $("nesne-ad").value;
-    if (ad) { ref.tur = "nesne"; ref.nesne = ad; }
+function requestBody() {
+  const ref = { type: state.ref.type };
+  if (state.ref.type === "scale") {
+    ref.length_mm = Number($("length-mm").value);
+    ref.name = $("length-name").value || null;
+    ref.points = state.ref.points;
+  } else if (state.ref.type === "rectangle") {
+    const name = $("object-name").value;
+    if (name) { ref.type = "object"; ref.object = name; }
     else {
-      ref.genislik_mm = Number($("dik-gen").value);
-      ref.yukseklik_mm = Number($("dik-yuk").value);
+      ref.width_mm = Number($("rect-w").value);
+      ref.height_mm = Number($("rect-h").value);
     }
-    ref.koseler = durum.ref.noktalar;
+    ref.corners = state.ref.points;
   } else {
-    ref.kenar_mm = Number($("aruco-kenar").value);
-    ref.koseler = durum.ref.noktalar;
-    ref.etiket = durum.ref.etiket;
+    ref.edge_mm = Number($("aruco-edge").value);
+    ref.corners = state.ref.points;
+    ref.label = state.ref.label;
   }
   return {
-    gorsel_id: durum.gorsel.kimlik,
-    referans: ref,
-    olcum: { tur: "kutu", noktalar: durum.nesne.koseler },
+    image_id: state.image.id,
+    reference: ref,
+    measurement: { type: "box", points: state.object.corners },
     sigma_px: Number($("sigma").value),
-    guven: Number($("guven").value),
+    confidence: Number($("confidence").value),
     mc_n: Number($("mc-n").value),
   };
 }
 
-async function olc() {
-  if (durum.calisiyor) { zamanlayici = setTimeout(olc, 80); return; }
-  durum.calisiyor = true;
-  $("sonuc").classList.add("calisiyor");
+async function runMeasurement() {
+  if (state.busy) { timer = setTimeout(runMeasurement, 80); return; }
+  state.busy = true;
+  $("result").classList.add("busy");
   try {
-    const s = await istek("/api/olc", {
+    const s = await request("/api/measure", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(istekGovdesi()),
+      body: JSON.stringify(requestBody()),
     });
-    durum.sonuc = s;
-    durum.ref.etiket = s.referans.etiket;
-    if (durum.ref.tur === "aruco" && s.referans.noktalar)
-      durum.ref.noktalar = s.referans.noktalar;
-    sonucuBas(s);
-    bilgi(`${s.olculer[0].metin}  ·  ${s.sure_ms.toFixed(0)} ms`);
-    $("ref-not").textContent = `${s.referans.etiket}` +
-      (s.referans.piksel_boyu ? ` · görüntüde ${Math.round(s.referans.piksel_boyu)} px` : "");
-    ciz();
-  } catch (h) {
-    durum.sonuc = null;
-    hataGoster(h.message);
-    bilgi("Ölçüm başarısız.");
+    state.result = s;
+    state.ref.label = s.reference.label;
+    if (state.ref.type === "aruco" && s.reference.points)
+      state.ref.points = s.reference.points;
+    renderResult(s);
+    status(`${s.measurements[0].text}  ·  ${s.duration_ms.toFixed(0)} ms`);
+    $("ref-note").textContent = `${s.reference.label}` +
+      (s.reference.pixel_length ? ` · ${Math.round(s.reference.pixel_length)} px in the image` : "");
+    draw();
+  } catch (error) {
+    state.result = null;
+    showError(error.message);
+    status("The measurement failed.");
   } finally {
-    durum.calisiyor = false;
-    $("sonuc").classList.remove("calisiyor");
+    state.busy = false;
+    $("result").classList.remove("busy");
   }
 }
 
-/* ================================================================ sonuç */
-const sayi = (v, b = 1) => v.toLocaleString("tr-TR",
-  { minimumFractionDigits: b, maximumFractionDigits: b });
-const yuzde = (o, b = 1) => "%" + sayi(o * 100, b);
+/* ================================================================ result */
+const number = (v, digits = 1) => v.toLocaleString("en-US",
+  { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const percent = (ratio, digits = 1) => number(ratio * 100, digits) + "%";
 
-function el(etiket, sinif, icerik) {
-  const d = document.createElement(etiket);
-  if (sinif) d.className = sinif;
-  if (typeof icerik === "string") d.textContent = icerik;
-  else if (Array.isArray(icerik)) d.append(...icerik);
-  return d;
+function el(tag, className, content) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (typeof content === "string") node.textContent = content;
+  else if (Array.isArray(content)) node.append(...content);
+  return node;
 }
 
-function kartlariBosalt() {
-  $("olcut-ad").textContent = "ÖLÇÜ";
-  $("olcut-deger").textContent = "—";
-  $("olcut-not").textContent = "ölçüm bekleniyor";
-  $("pay-deger").textContent = "—";
-  $("pay-not").textContent = "standart sapma";
-  $("aralik-deger").textContent = "—";
-  $("aralik-not").textContent = "kararı bu aralığın ucu verir";
-  $("aralik-iz").hidden = true;
-  $("ref-deger").textContent = "—";
-  $("ref-not-kart").textContent = "henüz işaretlenmedi";
-  $("ref-cipler").innerHTML = "";
-  $("tuval-cipler").hidden = true;
+function clearCards() {
+  $("metric-name").textContent = "MEASURE";
+  $("metric-value").textContent = "—";
+  $("metric-note").textContent = "waiting for a measurement";
+  $("margin-value").textContent = "—";
+  $("margin-note").textContent = "standard deviation";
+  $("interval-value").textContent = "—";
+  $("interval-note").textContent = "the end of this interval decides";
+  $("interval-track").hidden = true;
+  $("ref-value").textContent = "—";
+  $("ref-card-note").textContent = "not marked yet";
+  $("ref-chips").innerHTML = "";
+  $("canvas-chips").hidden = true;
 }
 
-function kartlariDoldur(s) {
-  const o = s.olcum;
-  $("olcut-ad").textContent = o.ad.toLocaleUpperCase("tr-TR");
-  $("olcut-deger").innerHTML = "";
-  $("olcut-deger").append(document.createTextNode(sayi(o.deger)),
-                          el("small", "", o.birim));
-  $("olcut-not").textContent = `${s.tur} · ${o.yontem}`;
+function fillCards(s) {
+  const m = s.measurement;
+  $("metric-name").textContent = m.name.toUpperCase();
+  $("metric-value").innerHTML = "";
+  $("metric-value").append(document.createTextNode(number(m.value)),
+                           el("small", "", m.unit));
+  $("metric-note").textContent = `${s.type} · ${m.method}`;
 
-  $("pay-deger").innerHTML = "";
-  $("pay-deger").append(document.createTextNode(`± ${sayi(o.std)}`),
-                        el("small", "", o.birim));
-  $("pay-not").textContent = `bağıl ${yuzde(o.bagil_hata, 2)}`;
+  $("margin-value").innerHTML = "";
+  $("margin-value").append(document.createTextNode(`± ${number(m.std)}`),
+                           el("small", "", m.unit));
+  $("margin-note").textContent = `relative ${percent(m.relative_error, 2)}`;
 
-  $("aralik-deger").textContent = `${sayi(o.alt)} – ${sayi(o.ust)}`;
-  $("aralik-not").textContent = `${yuzde(o.guven, 0)} güven · ${o.birim}`;
-  // İşaretin yeri: nokta tahmininin aralık içindeki gerçek konumu.
-  const genislik = o.ust - o.alt;
-  $("aralik-iz").hidden = !(genislik > 0);
-  if (genislik > 0) {
-    const oran = Math.min(1, Math.max(0, (o.deger - o.alt) / genislik));
-    $("aralik-imleci").style.left = `${(oran * 100).toFixed(1)}%`;
+  $("interval-value").textContent = `${number(m.low)} – ${number(m.high)}`;
+  $("interval-note").textContent = `${percent(m.confidence, 0)} confidence · ${m.unit}`;
+  // Where the marker sits: the real position of the point estimate in the interval.
+  const width = m.high - m.low;
+  $("interval-track").hidden = !(width > 0);
+  if (width > 0) {
+    const ratio = Math.min(1, Math.max(0, (m.value - m.low) / width));
+    $("interval-marker").style.left = `${(ratio * 100).toFixed(1)}%`;
   }
 
-  $("ref-deger").innerHTML = "";
-  $("ref-deger").append(document.createTextNode(sayi(s.homografi.olcek_mm_px, 3)),
+  $("ref-value").innerHTML = "";
+  $("ref-value").append(document.createTextNode(number(s.homography.scale_mm_px, 3)),
                         el("small", "", "mm/px"));
-  $("ref-not-kart").textContent = s.referans.etiket;
-  const cipler = $("ref-cipler");
-  cipler.innerHTML = "";
-  [s.homografi.model, `RMS ${sayi(s.homografi.rms_px, 2)} px`,
-   `σ ${sayi(s.referans.sigma_px, 1)} px`]
-    .forEach((metin) => cipler.append(el("span", "cip", metin)));
+  $("ref-card-note").textContent = s.reference.label;
+  const chips = $("ref-chips");
+  chips.innerHTML = "";
+  [s.homography.model, `RMS ${number(s.homography.rms_px, 2)} px`,
+   `σ ${number(s.reference.sigma_px, 1)} px`]
+    .forEach((text) => chips.append(el("span", "chip", text)));
 
-  $("tuval-cipler").hidden = false;
-  $("cip-sigma").textContent = `σ ${sayi(s.referans.sigma_px, 1)} px`;
-  $("cip-rms").textContent = `RMS ${sayi(s.homografi.rms_px, 2)} px`;
-  $("cip-olcek").textContent = `${sayi(s.homografi.olcek_mm_px, 3)} mm/px`;
+  $("canvas-chips").hidden = false;
+  $("chip-sigma").textContent = `σ ${number(s.reference.sigma_px, 1)} px`;
+  $("chip-rms").textContent = `RMS ${number(s.homography.rms_px, 2)} px`;
+  $("chip-scale").textContent = `${number(s.homography.scale_mm_px, 3)} mm/px`;
 }
 
-function sonucuTemizle() {
-  kartlariBosalt();
-  $("sonuc-govde").innerHTML = "";
-  $("sonuc-govde").append(el("p", "sonuc-bos",
-    !durum.gorsel ? "Önce bir fotoğraf yükle."
-    : !refTamam() ? "Referansı işaretle."
-    : "Nesnenin üstüne bir kutu çiz."));
+function clearResult() {
+  clearCards();
+  $("result-body").innerHTML = "";
+  $("result-body").append(el("p", "result-empty",
+    !state.image ? "Upload a photo first."
+    : !refDone() ? "Mark the reference."
+    : "Draw a box over the object."));
 }
 
-function hataGoster(metin) {
-  kartlariBosalt();
-  $("sonuc-govde").innerHTML = "";
-  $("sonuc-govde").append(el("div", "hata-kutu", metin));
+function showError(text) {
+  clearCards();
+  $("result-body").innerHTML = "";
+  $("result-body").append(el("div", "error-box", text));
 }
 
-function olcuBlogu(o, gercek) {
-  const kutu = el("div", "olcu");
-  kutu.append(el("div", "ad", o.ad));
-  kutu.append(el("div", "deger", [document.createTextNode(sayi(o.deger)),
-                                  el("small", "", o.birim)]));
-  kutu.append(el("div", "pay", `± ${sayi(o.std)}`));
-  kutu.append(el("div", "aralik", `${sayi(o.alt)} – ${sayi(o.ust)}`));
-  if (gercek != null) {
-    const icinde = gercek >= o.alt && gercek <= o.ust;
-    kutu.append(el("div", "gercek" + (icinde ? "" : " disarida"),
-      `gerçek ${sayi(gercek)} ${icinde ? "✓" : "✗"}`));
+function measureBlock(m, truth) {
+  const block = el("div", "measure");
+  block.append(el("div", "name", m.name));
+  block.append(el("div", "value", [document.createTextNode(number(m.value)),
+                                   el("small", "", m.unit)]));
+  block.append(el("div", "margin", `± ${number(m.std)}`));
+  block.append(el("div", "interval", `${number(m.low)} – ${number(m.high)}`));
+  if (truth != null) {
+    const inside = truth >= m.low && truth <= m.high;
+    block.append(el("div", "truth" + (inside ? "" : " outside"),
+      `true ${number(truth)} ${inside ? "✓" : "✗"}`));
   }
-  return kutu;
+  return block;
 }
 
-function sonucuBas(s) {
-  kartlariDoldur(s);
-  const govde = $("sonuc-govde");
-  govde.innerHTML = "";
-  const gercek = (ad) => (durum.demo && durum.demo.gercek && durum.demo.gercek[ad]
-    ? durum.demo.gercek[ad].deger : null);
+function renderResult(s) {
+  fillCards(s);
+  const body = $("result-body");
+  body.innerHTML = "";
+  const truth = (name) => (state.demo && state.demo.truth && state.demo.truth[name]
+    ? state.demo.truth[name].value : null);
 
-  const uzunluklar = s.olculer.filter((o) => o.birim === "mm");
-  const cift = el("div", "olcu-cifti");
-  uzunluklar.slice(0, 2).forEach((o) => cift.append(olcuBlogu(o, gercek(o.ad))));
-  govde.append(cift);
+  const lengths = s.measurements.filter((m) => m.unit === "mm");
+  const pair = el("div", "measure-pair");
+  lengths.slice(0, 2).forEach((m) => pair.append(measureBlock(m, truth(m.name))));
+  body.append(pair);
 
-  const alan = s.olculer.find((o) => o.ad === "alan");
-  const ek = el("div", "ek-olcu");
-  if (alan) {
-    const g = gercek("alan");
-    ek.append(el("div", "", [el("b", "", "alan "),
-      document.createTextNode(`${sayi(alan.deger)} ± ${sayi(alan.std)} ${alan.birim}` +
-        (g != null ? `  (gerçek ${sayi(g)})` : ""))]));
+  const area = s.measurements.find((m) => m.name === "area");
+  const extra = el("div", "extra");
+  if (area) {
+    const t = truth("area");
+    extra.append(el("div", "", [el("b", "", "area "),
+      document.createTextNode(`${number(area.value)} ± ${number(area.std)} ${area.unit}` +
+        (t != null ? `  (true ${number(t)})` : ""))]));
   }
-  if (s.kutu) {
-    const k = s.kutu.kenarlar_mm;
-    ek.append(el("div", "", [el("b", "", "kenarlar "),
-      document.createTextNode(k.map((v) => sayi(v)).join(" · ") + " mm")]));
-    if (s.kutu.dikdortgenlik > 0.01) {
-      ek.append(el("div", "", [el("b", "", "karşılıklı kenar farkı "),
-        document.createTextNode(yuzde(s.kutu.dikdortgenlik))]));
+  if (s.box) {
+    const edges = s.box.edges_mm;
+    extra.append(el("div", "", [el("b", "", "edges "),
+      document.createTextNode(edges.map((v) => number(v)).join(" · ") + " mm")]));
+    if (s.box.rectangularity > 0.01) {
+      extra.append(el("div", "", [el("b", "", "opposite edge mismatch "),
+        document.createTextNode(percent(s.box.rectangularity))]));
     }
   }
-  ek.append(el("div", "", [el("b", "", "referans "),
-    document.createTextNode(`${s.referans.etiket} · ${s.homografi.model}` +
-      ` · ${sayi(s.homografi.olcek_mm_px, 3)} mm/px`)]));
-  govde.append(ek);
+  extra.append(el("div", "", [el("b", "", "reference "),
+    document.createTextNode(`${s.reference.label} · ${s.homography.model}` +
+      ` · ${number(s.homography.scale_mm_px, 3)} mm/px`)]));
+  body.append(extra);
 
-  if (s.uyarilar && s.uyarilar.length) {
-    const liste = el("ul", "uyari-listesi kapali");
-    s.uyarilar.forEach((u) => liste.append(el("li", u.seviye, u.metin)));
-    govde.append(liste);
-    if (s.uyarilar.length > 2) {
-      const dugme = el("button", "uyari-ac", `${s.uyarilar.length - 2} not daha`);
-      dugme.onclick = () => {
-        const kapali = liste.classList.toggle("kapali");
-        dugme.textContent = kapali ? `${s.uyarilar.length - 2} not daha` : "daha az göster";
+  if (s.warnings && s.warnings.length) {
+    const list = el("ul", "warning-list collapsed");
+    s.warnings.forEach((w) => list.append(el("li", w.level, w.text)));
+    body.append(list);
+    if (s.warnings.length > 2) {
+      const button = el("button", "warning-toggle", `${s.warnings.length - 2} more notes`);
+      button.onclick = () => {
+        const collapsed = list.classList.toggle("collapsed");
+        button.textContent = collapsed ? `${s.warnings.length - 2} more notes` : "show less";
       };
-      govde.append(dugme);
+      body.append(button);
     }
   }
 }
 
-/* ================================================================ başlangıç */
-new ResizeObserver(tuvaliOlcekle).observe(sarmal);
-tuvaliOlcekle();
-arayuzuTazele();
-belirsizlikKarti();
-sonucuTemizle();
+/* ================================================================ start-up */
+new ResizeObserver(resizeCanvas).observe(wrap);
+resizeCanvas();
+refreshInterface();
+uncertaintyCard();
+clearResult();

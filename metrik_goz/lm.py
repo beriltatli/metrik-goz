@@ -1,16 +1,16 @@
 """
-Levenberg-Marquardt — elle yazılmış sönümlemeli en küçük kareler çözücüsü.
+Levenberg-Marquardt — a hand-written damped least-squares solver.
 
-Neden hazır `scipy.optimize.least_squares` kullanmıyoruz: bu paketin bütün
-belirsizlik iddiası çözücünün ürettiği kovaryansa dayanıyor. Kovaryansın
-nereden geldiğini bilmiyorsak "±3 cm" demeye hakkımız yok. Bu yüzden
-çözücü de bizim.
+Why not the ready-made `scipy.optimize.least_squares`: every uncertainty claim
+this package makes rests on the covariance the solver produces. If we don't
+know where that covariance comes from, we have no right to say "±3 cm". So the
+solver is ours too.
 
-Çözülen problem:
+The problem solved:
     min_p  ||r(p)||^2
-Gauss-Newton adımı (J^T J) dp = -J^T r denklemini çözer; LM bunu
-(J^T J + lambda * diag(J^T J)) dp = -J^T r  haline getirir. lambda büyükse
-adım gradyan inişine, küçükse Gauss-Newton'a yaklaşır.
+The Gauss-Newton step solves (J^T J) dp = -J^T r; LM turns that into
+(J^T J + lambda * diag(J^T J)) dp = -J^T r. A large lambda makes the step
+approach gradient descent, a small one makes it approach Gauss-Newton.
 """
 
 from __future__ import annotations
@@ -21,130 +21,130 @@ import numpy as np
 
 
 @dataclass
-class Sonuc:
-    """LM çözümünün sonucu."""
+class Result:
+    """The outcome of an LM solve."""
 
-    p: np.ndarray                      # bulunan parametreler
-    maliyet: float                     # son 0.5 * ||r||^2
-    artiklar: np.ndarray               # son artık vektörü
-    yakinsadi: bool
-    adim_sayisi: int
-    durma_nedeni: str
-    kovaryans: np.ndarray | None = None   # parametrelerin kovaryansı
-    gecmis: list[float] = field(default_factory=list)
+    p: np.ndarray                      # the parameters found
+    cost: float                        # final 0.5 * ||r||^2
+    residuals: np.ndarray              # final residual vector
+    converged: bool
+    steps: int
+    stop_reason: str
+    covariance: np.ndarray | None = None   # covariance of the parameters
+    history: list[float] = field(default_factory=list)
 
     @property
     def rms(self) -> float:
-        """Artıkların karekök ortalaması — ölçüm biriminde hata."""
-        return float(np.sqrt(np.mean(self.artiklar ** 2)))
+        """Root mean square of the residuals — the error in measurement units."""
+        return float(np.sqrt(np.mean(self.residuals ** 2)))
 
 
-def sayisal_jacobian(artik_fn, p: np.ndarray, adim: float = 1e-7) -> np.ndarray:
-    """Merkezi farkla Jacobian. Analitik Jacobian'ı doğrulamak için de kullanılır."""
+def numerical_jacobian(residual_fn, p: np.ndarray, step: float = 1e-7) -> np.ndarray:
+    """Central-difference Jacobian. Also used to verify the analytic Jacobian."""
     p = np.asarray(p, dtype=float)
-    r0 = np.asarray(artik_fn(p), dtype=float)
+    r0 = np.asarray(residual_fn(p), dtype=float)
     J = np.zeros((r0.size, p.size))
     for i in range(p.size):
-        h = adim * max(1.0, abs(p[i]))
-        ileri, geri = p.copy(), p.copy()
-        ileri[i] += h
-        geri[i] -= h
-        J[:, i] = (np.asarray(artik_fn(ileri)) - np.asarray(artik_fn(geri))) / (2 * h)
+        h = step * max(1.0, abs(p[i]))
+        forward, backward = p.copy(), p.copy()
+        forward[i] += h
+        backward[i] -= h
+        J[:, i] = (np.asarray(residual_fn(forward)) - np.asarray(residual_fn(backward))) / (2 * h)
     return J
 
 
-def coz(
-    artik_fn,
+def solve(
+    residual_fn,
     p0,
     jacobian_fn=None,
     *,
-    maks_adim: int = 100,
+    max_steps: int = 100,
     lambda0: float = 1e-3,
-    tol_maliyet: float = 1e-12,
-    tol_adim: float = 1e-12,
-    tol_gradyan: float = 1e-12,
-    kovaryans_hesapla: bool = True,
-) -> Sonuc:
+    cost_tol: float = 1e-12,
+    step_tol: float = 1e-12,
+    grad_tol: float = 1e-12,
+    compute_covariance: bool = True,
+) -> Result:
     """
-    Artık fonksiyonunu en küçük kareler anlamında minimize eder.
+    Minimizes the residual function in the least-squares sense.
 
-    artik_fn(p) -> (m,) artık vektörü
-    jacobian_fn(p) -> (m, n) Jacobian; verilmezse merkezi farkla hesaplanır.
+    residual_fn(p) -> (m,) residual vector
+    jacobian_fn(p) -> (m, n) Jacobian; if omitted, central differences are used.
 
-    Kovaryans, yakınsama noktasında  s^2 * (J^T J)^-1  ile kestirilir;
-    burada s^2 = ||r||^2 / (m - n) artık varyansıdır. Yani ölçüm gürültüsünü
-    dışarıdan varsaymak yerine uydurma artığından okuyoruz.
+    The covariance is estimated at the point of convergence as  s^2 * (J^T J)^-1,
+    where s^2 = ||r||^2 / (m - n) is the residual variance. That is, instead of
+    assuming the measurement noise from outside, we read it off the fit residual.
     """
     p = np.asarray(p0, dtype=float).copy()
-    jac = jacobian_fn if jacobian_fn is not None else (lambda q: sayisal_jacobian(artik_fn, q))
+    jac = jacobian_fn if jacobian_fn is not None else (lambda q: numerical_jacobian(residual_fn, q))
 
-    r = np.asarray(artik_fn(p), dtype=float)
-    maliyet = 0.5 * float(r @ r)
+    r = np.asarray(residual_fn(p), dtype=float)
+    cost = 0.5 * float(r @ r)
     lam = lambda0
-    gecmis = [maliyet]
-    neden = "maks_adim"
-    yakinsadi = False
-    adim_no = 0          # maks_adim=0 ise döngü hiç dönmez; yine de raporluyoruz
+    history = [cost]
+    reason = "max_steps"
+    converged = False
+    step_no = 0          # with max_steps=0 the loop never runs; we still report it
 
-    for adim_no in range(1, maks_adim + 1):
+    for step_no in range(1, max_steps + 1):
         J = np.asarray(jac(p), dtype=float)
-        g = J.T @ r                       # gradyan
-        if np.max(np.abs(g)) < tol_gradyan:
-            neden, yakinsadi = "gradyan", True
+        g = J.T @ r                       # gradient
+        if np.max(np.abs(g)) < grad_tol:
+            reason, converged = "gradient", True
             break
 
         H = J.T @ J
-        kosegen = np.diag(np.maximum(np.diag(H), 1e-12))
+        diagonal = np.diag(np.maximum(np.diag(H), 1e-12))
 
-        # Kabul edilen bir adım bulana kadar sönümlemeyi büyüt.
-        kabul = False
+        # Keep raising the damping until an acceptable step is found.
+        accepted = False
         for _ in range(30):
             try:
-                dp = np.linalg.solve(H + lam * kosegen, -g)
+                dp = np.linalg.solve(H + lam * diagonal, -g)
             except np.linalg.LinAlgError:
                 lam *= 10.0
                 continue
 
-            p_yeni = p + dp
-            r_yeni = np.asarray(artik_fn(p_yeni), dtype=float)
-            maliyet_yeni = 0.5 * float(r_yeni @ r_yeni)
+            p_new = p + dp
+            r_new = np.asarray(residual_fn(p_new), dtype=float)
+            cost_new = 0.5 * float(r_new @ r_new)
 
-            if maliyet_yeni < maliyet:
-                # Adım işe yaradı: sönümlemeyi gevşet, Gauss-Newton'a yaklaş.
-                azalma = maliyet - maliyet_yeni
-                p, r, maliyet = p_yeni, r_yeni, maliyet_yeni
+            if cost_new < cost:
+                # The step worked: relax the damping, move towards Gauss-Newton.
+                decrease = cost - cost_new
+                p, r, cost = p_new, r_new, cost_new
                 lam = max(lam * 0.3, 1e-12)
-                kabul = True
-                gecmis.append(maliyet)
-                if azalma < tol_maliyet or np.linalg.norm(dp) < tol_adim:
-                    neden, yakinsadi = "maliyet" if azalma < tol_maliyet else "adim", True
+                accepted = True
+                history.append(cost)
+                if decrease < cost_tol or np.linalg.norm(dp) < step_tol:
+                    reason, converged = "cost" if decrease < cost_tol else "step", True
                 break
 
             lam *= 10.0
 
-        if not kabul:
-            neden, yakinsadi = "sonumleme_doydu", True
+        if not accepted:
+            reason, converged = "damping_saturated", True
             break
-        if yakinsadi:
+        if converged:
             break
 
-    # Kovaryans son parametrede değerlendirilmiş Jacobian ister. Döngü bir adım
-    # kabul ettiyse elimizdeki J bir önceki p'ye ait, o yüzden yeniden kuruyoruz.
-    kov = _kovaryans(jac(p), r) if kovaryans_hesapla else None
+    # The covariance needs the Jacobian evaluated at the final parameters. If the
+    # loop accepted a step, the J we hold belongs to the previous p, so we rebuild.
+    cov = _covariance(jac(p), r) if compute_covariance else None
 
-    return Sonuc(
-        p=p, maliyet=maliyet, artiklar=r, yakinsadi=yakinsadi,
-        adim_sayisi=adim_no, durma_nedeni=neden, kovaryans=kov, gecmis=gecmis,
+    return Result(
+        p=p, cost=cost, residuals=r, converged=converged,
+        steps=step_no, stop_reason=reason, covariance=cov, history=history,
     )
 
 
-def _kovaryans(J: np.ndarray, r: np.ndarray) -> np.ndarray | None:
-    """s^2 (J^T J)^-1. Serbestlik derecesi kalmadıysa None döner."""
+def _covariance(J: np.ndarray, r: np.ndarray) -> np.ndarray | None:
+    """s^2 (J^T J)^-1. Returns None when there are no degrees of freedom left."""
     m, n = J.shape
-    sd = m - n
-    if sd <= 0:
+    dof = m - n
+    if dof <= 0:
         return None
-    s2 = float(r @ r) / sd
+    s2 = float(r @ r) / dof
     H = J.T @ J
     try:
         return s2 * np.linalg.inv(H)

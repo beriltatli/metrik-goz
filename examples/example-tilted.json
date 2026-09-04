@@ -1,0 +1,57 @@
+{
+  "name": "example-tilted.png",
+  "description": "The same scene, but shot at an angle. A scale built from a single length cannot correct perspective; watch whether the system notices that.",
+  "reference": {
+    "type": "scale",
+    "name": "1_tl",
+    "length_mm": 26.15
+  },
+  "default_measurement": "box",
+  "truth": {
+    "width": {
+      "value": 146.7,
+      "unit": "mm",
+      "description": "the phone's long edge"
+    },
+    "height": {
+      "value": 71.5,
+      "unit": "mm",
+      "description": "the phone's short edge"
+    },
+    "area": {
+      "value": 104.89049999999999,
+      "unit": "cm²",
+      "description": "the face of the phone"
+    }
+  },
+  "hint": {
+    "reference": [
+      [
+        608.43,
+        135.66
+      ],
+      [
+        691.57,
+        135.66
+      ]
+    ],
+    "box": [
+      [
+        744.13,
+        718.25
+      ],
+      [
+        756.11,
+        361.03
+      ],
+      [
+        543.89,
+        361.03
+      ],
+      [
+        555.87,
+        718.25
+      ]
+    ]
+  }
+}

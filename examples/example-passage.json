@@ -1,20 +1,20 @@
 {
-  "ad": "ornek-gecit.png",
-  "aciklama": "Enkaz koridoru: 200 mm ArUco referansı, ortada daralan serbest alan. Serbest alanın çevresini çokgen olarak çiz.",
-  "referans": {
-    "tur": "aruco",
-    "kenar_mm": 200.0
+  "name": "example-passage.png",
+  "description": "A rubble corridor: a 200 mm ArUco reference, free space narrowing in the middle. Draw a polygon around the free space.",
+  "reference": {
+    "type": "aruco",
+    "edge_mm": 200.0
   },
-  "varsayilan_olcum": "gecit",
-  "gercek": {
-    "gecit": {
-      "deger": 520.0,
-      "birim": "mm",
-      "aciklama": "koridorun en dar yeri"
+  "default_measurement": "passage",
+  "truth": {
+    "passage": {
+      "value": 520.0,
+      "unit": "mm",
+      "description": "the narrowest point of the corridor"
     }
   },
-  "ipucu": {
-    "gecit": [
+  "hint": {
+    "passage": [
       [
         863.22,
         932.96
@@ -65,5 +65,5 @@
       ]
     ]
   },
-  "ayak_izi_mm": 480.0
+  "footprint_mm": 480.0
 }

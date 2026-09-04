@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>metrik göz — fotoğraftan gerçek ölçü</title>
+  <title>metrik goz — real measurements from a photo</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><polygon points='3,32 18.5,5 45.5,5 61,32 45.5,59 18.5,59' fill='%230F1728' stroke='%23B72B1D' stroke-width='4'/><circle cx='32' cy='32' r='11' fill='%23B72B1D'/><circle cx='32' cy='32' r='4.5' fill='%230F1728'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
-<!-- ------------------------------------------------------------ simge kütüğü -->
+<!-- ------------------------------------------------------------ icon sprite -->
 <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
-  <symbol id="amblem" viewBox="0 0 64 64">
+  <symbol id="emblem" viewBox="0 0 64 64">
     <polygon points="3,32 18.5,5 45.5,5 61,32 45.5,59 18.5,59"
              fill="#131d33" stroke="#B72B1D" stroke-width="2.4" stroke-linejoin="round"/>
     <polygon points="10,32 21.5,12 42.5,12 54,32 42.5,52 21.5,52"
@@ -25,291 +25,291 @@
       <path d="M17 24v-3h3M47 24v-3h-3M17 40v3h3M47 40v3h-3"/>
     </g>
   </symbol>
-  <symbol id="ikon-foto" viewBox="0 0 24 24">
+  <symbol id="icon-photo" viewBox="0 0 24 24">
     <path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.9l1.2-2h6.8l1.2 2h1.9A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z"
           fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
     <circle cx="12" cy="13" r="3.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
   </symbol>
-  <symbol id="ikon-referans" viewBox="0 0 24 24">
+  <symbol id="icon-reference" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="7.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
     <circle cx="12" cy="12" r="2.2" fill="currentColor"/>
     <path d="M12 1.6v3.2M12 19.2v3.2M1.6 12h3.2M19.2 12h3.2"
           stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   </symbol>
-  <symbol id="ikon-nesne" viewBox="0 0 24 24">
+  <symbol id="icon-object" viewBox="0 0 24 24">
     <rect x="3.8" y="5.8" width="16.4" height="12.4" rx="1.6"
           fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3.4 2.6"/>
     <path d="M3.8 12h16.4" stroke="currentColor" stroke-width="1.6"/>
     <path d="M6.4 9.6v4.8M17.6 9.6v4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   </symbol>
-  <symbol id="ikon-sahne" viewBox="0 0 24 24">
+  <symbol id="icon-scene" viewBox="0 0 24 24">
     <path d="M12 3.4 21 8l-9 4.6L3 8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
     <path d="M3.6 12.4 12 16.7l8.4-4.3M3.6 16.4 12 20.7l8.4-4.3"
           fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
   </symbol>
-  <symbol id="ikon-olcu" viewBox="0 0 24 24">
+  <symbol id="icon-measure" viewBox="0 0 24 24">
     <path d="M3 15.2 15.2 3l5.8 5.8L8.8 21z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
     <path d="M7.6 10.6l2 2M10.8 7.4l2 2M14 4.2l2 2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   </symbol>
-  <symbol id="ikon-pay" viewBox="0 0 24 24">
+  <symbol id="icon-margin" viewBox="0 0 24 24">
     <path d="M3 12h18M6 8.6v6.8M18 8.6v6.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
     <circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
   </symbol>
-  <symbol id="ikon-aralik" viewBox="0 0 24 24">
+  <symbol id="icon-interval" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/>
     <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/>
     <path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
   </symbol>
-  <symbol id="ikon-katman" viewBox="0 0 24 24">
+  <symbol id="icon-layer" viewBox="0 0 24 24">
     <path d="M12 3.4 21 8l-9 4.6L3 8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
     <path d="M3.6 14.4 12 18.7l8.4-4.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
   </symbol>
 </svg>
 
-<div class="kabuk">
+<div class="shell">
 
-  <!-- ---------------------------------------------------------- kenar çubuğu -->
-  <nav class="kenar">
-    <a class="marka" href="/">
-      <span class="marka-yazi">METRİK G<svg class="marka-o"><use href="#amblem"/></svg>Z</span>
+  <!-- ---------------------------------------------------------- sidebar -->
+  <nav class="sidebar">
+    <a class="brand" href="/">
+      <span class="brand-text">METRIK G<svg class="brand-o"><use href="#emblem"/></svg>Z</span>
     </a>
 
-    <div class="kenar-govde">
-      <p class="kenar-baslik">Akış</p>
+    <div class="sidebar-body">
+      <p class="sidebar-title">Flow</p>
       <div class="nav">
-        <button class="nav-ogesi" data-akis="foto">
-          <svg class="nav-ikon"><use href="#ikon-foto"/></svg>Fotoğraf
-          <span class="nav-durum"></span>
+        <button class="nav-item" data-flow="photo">
+          <svg class="nav-icon"><use href="#icon-photo"/></svg>Photo
+          <span class="nav-dot"></span>
         </button>
-        <button class="nav-ogesi" data-akis="ref">
-          <svg class="nav-ikon"><use href="#ikon-referans"/></svg>Referans
-          <span class="nav-durum"></span>
+        <button class="nav-item" data-flow="ref">
+          <svg class="nav-icon"><use href="#icon-reference"/></svg>Reference
+          <span class="nav-dot"></span>
         </button>
-        <button class="nav-ogesi" data-akis="nesne">
-          <svg class="nav-ikon"><use href="#ikon-nesne"/></svg>Nesne
-          <span class="nav-durum"></span>
+        <button class="nav-item" data-flow="object">
+          <svg class="nav-icon"><use href="#icon-object"/></svg>Object
+          <span class="nav-dot"></span>
         </button>
       </div>
 
-      <p class="kenar-baslik">Örnek sahneler</p>
+      <p class="sidebar-title">Sample scenes</p>
       <div class="nav">
-        {% for ad in ornekler %}
-          <button class="nav-ogesi" data-ornek="{{ ad }}">
-            <svg class="nav-ikon"><use href="#ikon-sahne"/></svg>{{ ad }}
+        {% for name in samples %}
+          <button class="nav-item" data-sample="{{ name }}">
+            <svg class="nav-icon"><use href="#icon-scene"/></svg>{{ name }}
           </button>
         {% endfor %}
       </div>
     </div>
 
-    <div class="kenar-alt">
-      <div class="kenar-kart">
-        <div class="kenar-kart-bas">
-          <span>BELİRSİZLİK</span><b id="kenar-guven">%95</b>
+    <div class="sidebar-foot">
+      <div class="sidebar-card">
+        <div class="sidebar-card-head">
+          <span>UNCERTAINTY</span><b id="side-confidence">95%</b>
         </div>
-        <div class="cubuk"><i id="kenar-cubuk" style="width:95%"></i></div>
-        <p id="kenar-not">σ 1,5 px · 400 MC örneği</p>
+        <div class="bar"><i id="side-bar" style="width:95%"></i></div>
+        <p id="side-note">σ 1.5 px · 400 MC samples</p>
       </div>
-      <span class="surum">metrik göz · v{{ surum }}</span>
+      <span class="version">metrik goz · v{{ version }}</span>
     </div>
   </nav>
 
-  <!-- ---------------------------------------------------------- içerik -->
-  <div class="icerik">
+  <!-- ---------------------------------------------------------- content -->
+  <div class="content">
 
-    <header class="ust">
-      <div class="ust-yazi">
-        <h1>Ölçüm paneli</h1>
-        <p class="slogan">Tek fotoğraftan gerçek ölçü — ve dürüst bir hata payı.</p>
+    <header class="topbar">
+      <div class="topbar-text">
+        <h1>Measurement panel</h1>
+        <p class="tagline">Real measurements from a single photo — and an honest error bar.</p>
       </div>
-      <div class="ust-sag">
-        <span class="ust-not" id="ust-not">Ölçüsü bilinen bir referans yeter.</span>
-        <button class="dugme birincil" id="yeni-olcum">
-          <span class="arti">+</span> Yeni ölçüm
+      <div class="topbar-right">
+        <span class="top-note" id="top-note">One object of known size is enough.</span>
+        <button class="btn primary" id="new-measurement">
+          <span class="plus">+</span> New measurement
         </button>
       </div>
     </header>
 
-    <!-- ölçüt kartları: hepsi son ölçümün gerçek çıktısı -->
-    <section class="olcut-satiri">
-      <article class="olcut k-olcu koyu-yazi">
-        <header><span id="olcut-ad">ÖLÇÜ</span><svg class="olcut-ikon"><use href="#ikon-olcu"/></svg></header>
-        <div class="olcut-deger" id="olcut-deger">—</div>
-        <p class="olcut-alt" id="olcut-not">ölçüm bekleniyor</p>
+    <!-- metric cards: all of them are the real output of the last measurement -->
+    <section class="metric-row">
+      <article class="metric m-value dark-text">
+        <header><span id="metric-name">MEASURE</span><svg class="metric-icon"><use href="#icon-measure"/></svg></header>
+        <div class="metric-value" id="metric-value">—</div>
+        <p class="metric-sub" id="metric-note">waiting for a measurement</p>
       </article>
 
-      <article class="olcut k-pay">
-        <header><span>HATA PAYI</span><svg class="olcut-ikon"><use href="#ikon-pay"/></svg></header>
-        <div class="olcut-deger" id="pay-deger">—</div>
-        <p class="olcut-alt" id="pay-not">standart sapma</p>
+      <article class="metric m-margin">
+        <header><span>ERROR BAR</span><svg class="metric-icon"><use href="#icon-margin"/></svg></header>
+        <div class="metric-value" id="margin-value">—</div>
+        <p class="metric-sub" id="margin-note">standard deviation</p>
       </article>
 
-      <article class="olcut k-aralik koyu-yazi">
-        <header><span>GÜVEN ARALIĞI</span><svg class="olcut-ikon"><use href="#ikon-aralik"/></svg></header>
-        <div class="olcut-deger dar" id="aralik-deger">—</div>
-        <p class="olcut-alt" id="aralik-not">kararı bu aralığın ucu verir</p>
-        <div class="iz" id="aralik-iz" hidden><i id="aralik-imleci"></i></div>
+      <article class="metric m-interval dark-text">
+        <header><span>CONFIDENCE INTERVAL</span><svg class="metric-icon"><use href="#icon-interval"/></svg></header>
+        <div class="metric-value narrow" id="interval-value">—</div>
+        <p class="metric-sub" id="interval-note">the end of this interval decides</p>
+        <div class="track" id="interval-track" hidden><i id="interval-marker"></i></div>
       </article>
 
-      <article class="olcut k-referans">
-        <header><span>AKTİF REFERANS</span><svg class="olcut-ikon"><use href="#ikon-katman"/></svg></header>
-        <div class="olcut-deger" id="ref-deger">—</div>
-        <p class="olcut-alt" id="ref-not-kart">henüz işaretlenmedi</p>
-        <div class="cipler" id="ref-cipler"></div>
+      <article class="metric m-reference">
+        <header><span>ACTIVE REFERENCE</span><svg class="metric-icon"><use href="#icon-layer"/></svg></header>
+        <div class="metric-value" id="ref-value">—</div>
+        <p class="metric-sub" id="ref-card-note">not marked yet</p>
+        <div class="chips" id="ref-chips"></div>
       </article>
     </section>
 
-    <div class="calisma">
+    <div class="workspace">
 
-      <!-- ----------------------------------------------------- tuval -->
-      <section class="tuval-alani">
-        <div class="tuval-bas">
+      <!-- ----------------------------------------------------- canvas -->
+      <section class="canvas-area">
+        <div class="canvas-head">
           <div>
-            <h2>Canlı ölçüm</h2>
-            <p>Referans düzlemi üzerindeki noktalar, Monte Carlo hata payıyla</p>
+            <h2>Live measurement</h2>
+            <p>Points on the reference plane, with a Monte Carlo error bar</p>
           </div>
-          <div class="cipler tek" id="tuval-cipler" hidden>
-            <span class="cip" id="cip-sigma"></span>
-            <span class="cip" id="cip-rms"></span>
-            <span class="cip" id="cip-olcek"></span>
+          <div class="chips single" id="canvas-chips" hidden>
+            <span class="chip" id="chip-sigma"></span>
+            <span class="chip" id="chip-rms"></span>
+            <span class="chip" id="chip-scale"></span>
           </div>
         </div>
 
-        <div class="tuval-sarmal" id="tuval-sarmal">
-          <canvas id="tuval"></canvas>
-          <canvas id="buyutec" width="132" height="132"></canvas>
-          <div class="birak-katmani" id="birak">
-            <div class="birak-cerceve"></div>
-            <svg class="birak-amblem"><use href="#amblem"/></svg>
-            <h2>Fotoğrafı buraya sürükle</h2>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas id="canvas"></canvas>
+          <canvas id="magnifier" width="132" height="132"></canvas>
+          <div class="drop-layer" id="drop">
+            <div class="drop-frame"></div>
+            <svg class="drop-emblem"><use href="#emblem"/></svg>
+            <h2>Drag your photo here</h2>
             <p>
-              Ya da <b>fotoğraf seç</b>. Fotoğrafta ölçüsünü bildiğin bir şey olmalı —
-              bir madeni para yeter. Elinde fotoğraf yoksa soldaki örnek sahneleri dene.
+              Or <b>choose a photo</b>. The photo must contain something whose size you
+              know — a coin will do. No photo at hand? Try the sample scenes on the left.
             </p>
-            <button class="dugme birincil dar" id="dosya-sec-buyuk">Fotoğraf seç</button>
+            <button class="btn primary narrow" id="choose-file-big">Choose a photo</button>
           </div>
-          <div class="ipucu-serit" id="serit" hidden></div>
+          <div class="hint-strip" id="hint" hidden></div>
         </div>
 
-        <div class="alt-cubuk">
-          <span id="durum-metni">Fotoğraf bekleniyor.</span>
-          <div class="esnek"></div>
-          <button class="dugme minik" id="sigdir" title="Sığdır (F)">sığdır</button>
-          <button class="dugme minik" id="uzaklas">−</button>
-          <span class="rozet" id="olcek-rozeti">%100</span>
-          <button class="dugme minik" id="yakinlas">+</button>
+        <div class="statusbar">
+          <span id="status-text">Waiting for a photo.</span>
+          <div class="spacer"></div>
+          <button class="btn tiny" id="fit" title="Fit (F)">fit</button>
+          <button class="btn tiny" id="zoom-out">−</button>
+          <span class="badge" id="zoom-badge">100%</span>
+          <button class="btn tiny" id="zoom-in">+</button>
         </div>
       </section>
 
-      <!-- ----------------------------------------------------- yan -->
-      <aside class="yan">
+      <!-- ----------------------------------------------------- side -->
+      <aside class="side">
 
-        <section class="kart adim" id="adim-foto">
-          <h3><i>1</i> Fotoğraf <span class="esnek"></span>
-            <span class="onay" id="foto-onay" hidden>✓</span></h3>
-          <div class="adim-govde">
-            <button class="dugme genis" id="dosya-sec">Fotoğraf seç…</button>
-            <input type="file" id="dosya" accept="image/*" hidden>
-            <p class="not" id="foto-not">Sürükle-bırak ve <code>⌘V</code> ile yapıştırma da çalışır.</p>
+        <section class="card step" id="step-photo">
+          <h3><i>1</i> Photo <span class="spacer"></span>
+            <span class="check" id="photo-check" hidden>✓</span></h3>
+          <div class="step-body">
+            <button class="btn wide" id="choose-file">Choose a photo…</button>
+            <input type="file" id="file" accept="image/*" hidden>
+            <p class="note" id="photo-note">Drag-and-drop and pasting with <code>⌘V</code> work too.</p>
           </div>
         </section>
 
-        <section class="kart adim" id="adim-ref">
-          <h3><i>2</i> Referans <span class="esnek"></span>
-            <span class="onay" id="ref-onay" hidden>✓</span></h3>
-          <div class="adim-govde">
-            <div class="segment mini" id="ref-turleri">
-              <button class="dugme secili" data-ref="olcek">Uzunluk</button>
-              <button class="dugme" data-ref="dikdortgen">Dikdörtgen</button>
-              <button class="dugme" data-ref="aruco">ArUco</button>
+        <section class="card step" id="step-ref">
+          <h3><i>2</i> Reference <span class="spacer"></span>
+            <span class="check" id="ref-check" hidden>✓</span></h3>
+          <div class="step-body">
+            <div class="segment mini" id="ref-types">
+              <button class="btn selected" data-ref="scale">Length</button>
+              <button class="btn" data-ref="rectangle">Rectangle</button>
+              <button class="btn" data-ref="aruco">ArUco</button>
             </div>
 
-            <div id="ref-olcek">
-              <div class="satir">
-                <select id="uzunluk-ad">
-                  {% for u in uzunluklar %}
-                    <option value="{{ u.ad }}" data-mm="{{ u.mm }}"
-                      {% if u.ad == '1_tl' %}selected{% endif %}>{{ u.aciklama }} — {{ u.mm }} mm</option>
+            <div id="ref-scale">
+              <div class="row">
+                <select id="length-name">
+                  {% for u in lengths %}
+                    <option value="{{ u.name }}" data-mm="{{ u.mm }}"
+                      {% if u.name == '1_tl' %}selected{% endif %}>{{ u.description }} — {{ u.mm }} mm</option>
                   {% endfor %}
-                  <option value="">kendim yazacağım…</option>
+                  <option value="">I'll type it myself…</option>
                 </select>
               </div>
-              <div class="satir">
-                <label for="uzunluk-mm">Gerçek boyu</label>
-                <input type="number" id="uzunluk-mm" value="26.15" min="0.1" step="0.05">
-                <span class="birim-etiket">mm</span>
+              <div class="row">
+                <label for="length-mm">Real size</label>
+                <input type="number" id="length-mm" value="26.15" min="0.1" step="0.05">
+                <span class="unit">mm</span>
               </div>
             </div>
 
-            <div id="ref-dikdortgen" hidden>
-              <div class="satir">
-                <select id="nesne-ad">
-                  {% for ad, boyut in nesneler.items() %}
-                    <option value="{{ ad }}">{{ ad }} — {{ boyut[0] }}×{{ boyut[1] }} mm</option>
+            <div id="ref-rectangle" hidden>
+              <div class="row">
+                <select id="object-name">
+                  {% for name, size in objects.items() %}
+                    <option value="{{ name }}">{{ name }} — {{ size[0] }}×{{ size[1] }} mm</option>
                   {% endfor %}
-                  <option value="">kendim yazacağım…</option>
+                  <option value="">I'll type it myself…</option>
                 </select>
               </div>
-              <div class="satir ikili" id="dikdortgen-olculeri" hidden>
-                <input type="number" id="dik-gen" value="297" min="1" step="1" title="uzun kenar">
-                <span class="birim-etiket">×</span>
-                <input type="number" id="dik-yuk" value="210" min="1" step="1" title="kısa kenar">
-                <span class="birim-etiket">mm</span>
+              <div class="row pair" id="rect-sizes" hidden>
+                <input type="number" id="rect-w" value="297" min="1" step="1" title="long edge">
+                <span class="unit">×</span>
+                <input type="number" id="rect-h" value="210" min="1" step="1" title="short edge">
+                <span class="unit">mm</span>
               </div>
             </div>
 
             <div id="ref-aruco" hidden>
-              <div class="satir">
-                <label for="aruco-kenar">İşaret kenarı</label>
-                <input type="number" id="aruco-kenar" value="100" min="1" step="1">
-                <span class="birim-etiket">mm</span>
+              <div class="row">
+                <label for="aruco-edge">Marker edge</label>
+                <input type="number" id="aruco-edge" value="100" min="1" step="1">
+                <span class="unit">mm</span>
               </div>
-              <button class="dugme genis" id="aruco-bul">İşareti otomatik bul</button>
+              <button class="btn wide" id="aruco-find">Detect the marker</button>
             </div>
 
-            <p class="not" id="ref-not"></p>
-            <button class="dugme minik gizle-bos" id="ref-yeniden" hidden>yeniden çiz</button>
+            <p class="note" id="ref-note"></p>
+            <button class="btn tiny" id="ref-redraw" hidden>redraw</button>
           </div>
         </section>
 
-        <section class="kart adim" id="adim-nesne">
-          <h3><i>3</i> Nesne <span class="esnek"></span>
-            <span class="onay" id="nesne-onay" hidden>✓</span></h3>
-          <div class="adim-govde">
-            <p class="not" id="nesne-not">Ölçmek istediğin nesnenin üstüne bir kutu çiz.</p>
-            <button class="dugme minik" id="nesne-yeniden" hidden>yeniden çiz</button>
+        <section class="card step" id="step-object">
+          <h3><i>3</i> Object <span class="spacer"></span>
+            <span class="check" id="object-check" hidden>✓</span></h3>
+          <div class="step-body">
+            <p class="note" id="object-note">Draw a box over the object you want to measure.</p>
+            <button class="btn tiny" id="object-redraw" hidden>redraw</button>
           </div>
         </section>
 
-        <section class="kart sonuc" id="sonuc">
-          <h3>Ayrıntı ve uyarılar</h3>
-          <div id="sonuc-govde">
-            <p class="sonuc-bos">Referansı ve nesneyi işaretlediğinde ölçü burada,
-              hata payıyla birlikte görünecek.</p>
+        <section class="card result" id="result">
+          <h3>Detail and warnings</h3>
+          <div id="result-body">
+            <p class="result-empty">Once you mark the reference and the object, the
+              measurement appears here with its error bar.</p>
           </div>
         </section>
 
-        <details class="kart gelismis">
-          <summary>Gelişmiş</summary>
+        <details class="card advanced">
+          <summary>Advanced</summary>
           <div>
-            <div class="satir">
-              <label for="sigma">Tıklama gürültüsü</label>
+            <div class="row">
+              <label for="sigma">Click noise</label>
               <input type="number" id="sigma" value="1.5" min="0.01" max="20" step="0.1">
-              <span class="birim-etiket">px</span>
+              <span class="unit">px</span>
             </div>
-            <div class="satir">
-              <label for="guven">Güven</label>
-              <select id="guven">
-                <option value="0.68">%68</option><option value="0.9">%90</option>
-                <option value="0.95" selected>%95</option><option value="0.99">%99</option>
+            <div class="row">
+              <label for="confidence">Confidence</label>
+              <select id="confidence">
+                <option value="0.68">68%</option><option value="0.9">90%</option>
+                <option value="0.95" selected>95%</option><option value="0.99">99%</option>
               </select>
             </div>
-            <div class="satir">
-              <label for="mc-n">MC örneği</label>
+            <div class="row">
+              <label for="mc-n">MC samples</label>
               <input type="number" id="mc-n" value="400" min="50" max="4000" step="50">
             </div>
-            <p class="not">Hata payı Monte Carlo ile üretiliyor: referansı ve
-              tıkladığın köşeleri gürültüyle bozup ölçümü baştan yapıyoruz. Tıklama
-              gürültüsü elle işaretlemede tipik olarak 1–2 piksel.</p>
+            <p class="note">The error bar is produced by Monte Carlo: we perturb the
+              reference and the corners you clicked with noise and redo the measurement
+              from scratch. Click noise is typically 1–2 pixels when marking by hand.</p>
           </div>
         </details>
 
@@ -318,8 +318,8 @@
   </div>
 </div>
 
-<script id="sunucu-verisi" type="application/json">
-  {{ {"uzunluklar": uzunluklar, "nesneler": nesneler, "sigmalar": sigmalar} | tojson }}
+<script id="server-data" type="application/json">
+  {{ {"lengths": lengths, "objects": objects, "sigmas": sigmas} | tojson }}
 </script>
 <script src="{{ url_for('static', filename='panel.js') }}"></script>
 </body>

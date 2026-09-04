@@ -4,7 +4,7 @@
 **Real-world measurements from a single photo — with an honest error bar.**
 
 ```
-Mesafe:   412.3 ± 8.7 mm (%95: 395.1–429.4)
+Distance: 412.3 ± 8.7 mm (95%: 395.1–429.4)
 ```
 
 `pure-NumPy core` · `hand-written Levenberg–Marquardt` · `56 tests` · `synthetic validation`
@@ -55,13 +55,13 @@ When the scene contains one object of known size, it measures everything
 
 | Measurement | What you get |
 |---|---|
-| `kutu` | width, height and area of an object whose four corners you mark |
-| `mesafe` | distance between two points, mm |
-| `uzunluk` | total length of a polyline, mm |
-| `alan` | polygon area, mm² |
-| `en_dar_gecit` | narrowest point of the free space + a "does this footprint fit" verdict |
+| `box` | width, height and area of an object whose four corners you mark |
+| `distance` | distance between two points, mm |
+| `length` | total length of a polyline, mm |
+| `area` | polygon area, mm² |
+| `narrowest_passage` | narrowest point of the free space + a "does this footprint fit" verdict |
 
-Every measurement returns an `Olcum`: the value, its standard deviation, a
+Every measurement returns a `Measurement`: the value, its standard deviation, a
 confidence interval, and which method produced it.
 
 The reference can come from one of two families, and the difference decides how
@@ -69,18 +69,18 @@ much of the measurement you can trust:
 
 | Reference family | What you supply | What you get |
 |---|---|---|
-| **similarity** (`Homografi.olcekten`) | a single known **length** — a coin's diameter, a card's long edge — and its two endpoints | scale. Perspective is **not** corrected: correct if the photo was taken from directly above, systematically wrong if it was taken at an angle |
-| **projective** (`Homografi.kur`) | four points — an ArUco marker or the corners of a rectangular object | scale **and** perspective correction |
+| **similarity** (`Homography.from_length`) | a single known **length** — a coin's diameter, a card's long edge — and its two endpoints | scale. Perspective is **not** corrected: correct if the photo was taken from directly above, systematically wrong if it was taken at an angle |
+| **projective** (`Homography.fit`) | four points — an ArUco marker or the corners of a rectangular object | scale **and** perspective correction |
 
 The cheap route is not always valid; where each one fails is measured in the
 [Validation](#validation) section.
 
-Reference table shipped in the box (`metrik_goz.referans`):
+Reference table shipped in the box (`metrik_goz.reference`):
 
 | Family | Ready-made options |
 |---|---|
-| Single length | 1 TL · 50/25/10/5/1 kuruş · €2 · €1 · 50 cents · US quarter · long or short edge of a credit card |
-| Rectangle | `kredi_karti` (ISO ID-1) · `a4` · `a5` · `cd` · `post_it` |
+| Single length | 1 TL · 50/25/10/5/1 kurus · €2 · €1 · 50 cents · US quarter · long or short edge of a credit card |
+| Rectangle | `credit_card` (ISO ID-1) · `a4` · `a5` · `cd` · `post_it` |
 | ArUco | `DICT_4X4_50` (you give the edge length), corners at sub-pixel accuracy |
 
 ---
@@ -88,56 +88,56 @@ Reference table shipped in the box (`metrik_goz.referans`):
 ## Usage
 
 ```python
-from metrik_goz import Homografi, olcum, belirsizlik, referans
+from metrik_goz import Homography, measure, uncertainty, reference
 import cv2
 
-goruntu = cv2.imread("masa.jpg")
-dunya, resim, kimlik = referans.aruco_bul(goruntu, kenar_mm=100.0)
+image = cv2.imread("table.jpg")
+world, image_px, marker_id = reference.find_aruco(image, edge_mm=100.0)
 
-h = Homografi.kur(dunya, resim)
-noktalar = [(412, 690), (905, 712)]          # the two points you want to measure
+h = Homography.fit(world, image_px)
+points = [(412, 690), (905, 712)]            # the two points you want to measure
 
-sonuc = belirsizlik.monte_carlo(
-    dunya, resim,
-    lambda hh, nn: olcum.mesafe(hh, nn[0], nn[1]),
-    noktalar, sigma_px=0.4,
+result = uncertainty.monte_carlo(
+    world, image_px,
+    lambda hh, nn: measure.distance(hh, nn[0], nn[1]),
+    points, sigma_px=0.4,
 )
-print(sonuc)          # 412.3 ± 8.7 mm (%95: 395.1–429.4)
+print(result)         # 412.3 ± 8.7 mm (95%: 395.1–429.4)
 ```
 
 No ArUco marker? The diameter of a coin you drop next to the object is enough —
 in that case the reference model builds the homography itself:
 
 ```python
-kur = lambda uc: Homografi.olcekten(uc[0], uc[1], 26.15)   # 1 TL diameter
+fit = lambda ends: Homography.from_length(ends[0], ends[1], 26.15)   # 1 TL diameter
 
-sonuc = belirsizlik.monte_carlo(
-    None, para_uclari_px,
-    lambda hh, nn: olcum.kutu(hh, nn).en_mm,
-    telefon_koseleri_px, sigma_px=1.5, kur_fn=kur,
+result = uncertainty.monte_carlo(
+    None, coin_ends_px,
+    lambda hh, nn: measure.box(hh, nn).width_mm,
+    phone_corners_px, sigma_px=1.5, fit_fn=fit,
 )
 ```
 
 From the command line:
 
 ```bash
-metrik-goz kutu   masa.jpg  --olcek-ad 1_tl --uc 812,455 --uc 888,455 \
-                            --kose-nesne ... (the object's 4 corners)
-metrik-goz mesafe masa.jpg  --aruco 100 --nokta 412,690 --nokta 905,712
-metrik-goz alan   masa.jpg  --nesne a4 --kose ... (the reference's 4 corners) \
-                            --nokta ... (at least 3 polygon points)
-metrik-goz gecit  enkaz.jpg --aruco 200 --maske serbest.png --ayak-izi 480
-metrik-goz ornek  --sahne hepsi --cikti ornekler/
-metrik-goz dogrula --cikti dogrulama/
-metrik-goz panel  --port 8000
+metrik-goz box      table.jpg   --scale-name 1_tl --end 812,455 --end 888,455 \
+                                --object-corner ... (the object's 4 corners)
+metrik-goz distance table.jpg   --aruco 100 --point 412,690 --point 905,712
+metrik-goz area     table.jpg   --object a4 --corner ... (the reference's 4 corners) \
+                                --point ... (at least 3 polygon points)
+metrik-goz passage  rubble.jpg  --aruco 200 --mask free.png --footprint 480
+metrik-goz sample   --scene all --out examples/
+metrik-goz validate --out validation/
+metrik-goz panel    --port 8000
 ```
 
 Every command takes the reference through the same flags: `--aruco EDGE_MM`,
-`--olcek-ad NAME --uc x,y ×2`, `--olcek LENGTH_MM --uc x,y ×2`, or
-`--nesne NAME --kose x,y ×4`. The shared `--mc` sets the Monte Carlo sample
+`--scale-name NAME --end x,y ×2`, `--scale LENGTH_MM --end x,y ×2`, or
+`--object NAME --corner x,y ×4`. The shared `--mc` sets the Monte Carlo sample
 count.
 
-The gap command decides on the **lower end** of the interval, because of the
+The passage command decides on the **lower end** of the interval, because of the
 asymmetry above.
 
 ---
@@ -156,10 +156,10 @@ last measurement.
 
 | Card | What it shows |
 |---|---|
-| **ÖLÇÜ** | the value itself (width / height / area) |
-| **HATA PAYI** | standard deviation |
-| **GÜVEN ARALIĞI** | lower–upper bound; the end of this interval is what you decide on |
-| **AKTİF REFERANS** | which reference, which model, σ and the reprojection RMS |
+| **MEASURE** | the value itself (width / height / area) |
+| **ERROR BAR** | standard deviation |
+| **CONFIDENCE INTERVAL** | lower–upper bound; the end of this interval is what you decide on |
+| **ACTIVE REFERENCE** | which reference, which model, σ and the reprojection RMS |
 
 The flow has three steps:
 
@@ -170,28 +170,27 @@ The flow has three steps:
 | **3 · Object** | draw a four-cornered box over the thing you want to measure |
 | **Result** | width, height and area; each with its confidence interval, plus warnings with the most dangerous one first |
 
-Three things are yours under **Gelişmiş**: click noise (`sigma_px`, typically
+Three things are yours under **Advanced**: click noise (`sigma_px`, typically
 1–2 px when marking by hand), confidence level (68% / 90% / 95% / 99%) and the
 Monte Carlo sample count. All three feed straight into the computation — they
 are not decoration.
 
 The panel drives a single flow — "how many centimeters is this object". The
-`mesafe`, `uzunluk`, `alan` and `en_dar_gecit` measurements live in the library,
-the CLI and the `/api/olc` endpoint; they are not in the panel, because a
-single-flow interface beats one where a misplaced click gives you the wrong
-measurement.
+`distance`, `length`, `area` and `narrowest_passage` measurements live in the
+library, the CLI and the `/api/measure` endpoint; they are not in the panel,
+because a single-flow interface beats one where a misplaced click gives you the
+wrong measurement.
 
 You can drag points to correct them, zoom with the wheel, and get back with
-`sığdır`; the magnifier next to the cursor is for seating a corner pixel by
-pixel. Click noise is a real term in the uncertainty (`sigma_px`), so the
-magnifier is not decoration either.
+`fit`; the magnifier next to the cursor is for seating a corner pixel by pixel.
+Click noise is a real term in the uncertainty (`sigma_px`), so the magnifier is
+not decoration either.
 
-**The panel measures nothing.** Every number you see comes from the same
-tested functions in `metrik_goz.olcum` and `metrik_goz.belirsizlik`; the browser
-only collects pixel coordinates. Writing the same computation twice in two
-places means that one day the two will drift apart —
-`testler/test_web.py` checks that the number the panel returns is identical to
-the one the library returns.
+**The panel measures nothing.** Every number you see comes from the same tested
+functions in `metrik_goz.measure` and `metrik_goz.uncertainty`; the browser only
+collects pixel coordinates. Writing the same computation twice in two places
+means that one day the two will drift apart — `tests/test_web.py` checks that the
+number the panel returns is identical to the one the library returns.
 
 One detail: the uploaded image is decoded once on the server and re-encoded
 **without EXIF**, and that copy is what goes to the browser. Phone photos carry
@@ -201,7 +200,7 @@ measurement comes out silently wrong.
 
 ### If you don't have a photo
 
-The **Örnek sahneler** buttons in the sidebar open synthetic scenes with a known
+The **Sample scenes** buttons in the sidebar open synthetic scenes with a known
 answer: since we placed the camera, the reference and the distance to be
 measured, the panel can print the true value next to the measurement — and mark
 it **✓** if the true value falls inside the interval, **✗** if it does not.
@@ -213,18 +212,18 @@ measurement; move the points around and watch what changes.
 The same scenes can be written to disk (image + a JSON carrying the true value):
 
 ```bash
-metrik-goz ornek --sahne hepsi --cikti ornekler/
+metrik-goz sample --scene all --out examples/
 ```
 
 | Sample | What's in it | True answer | In the panel |
 |---|---|---|---|
-| `duz` | phone on a table, 1 TL next to it; shot almost straight down | 146.7 × 71.5 mm · 104.9 cm² | ✓ |
-| `egik` | same scene, shot at 26° | same | ✓ |
-| `gecit` | 200 mm ArUco, a free corridor narrowing in the middle | 520.0 mm | CLI/API |
+| `flat` | phone on a table, 1 TL next to it; shot almost straight down | 146.7 × 71.5 mm · 104.9 cm² | ✓ |
+| `tilted` | same scene, shot at 26° | same | ✓ |
+| `passage` | 200 mm ArUco, a free corridor narrowing in the middle | 520.0 mm | CLI/API |
 
-`duz` and `egik` share the same true answer and differ only in camera angle —
+`flat` and `tilted` share the same true answer and differ only in camera angle —
 running them back to back shows in one glance where a scale built from a single
-length holds and where it does not. In the `egik` scene the system measures
+length holds and where it does not. In the `tilted` scene the system measures
 112 mm instead of 146.7 mm **and says so with a high-level warning**; it does
 not fail silently.
 
@@ -237,16 +236,16 @@ are usable from outside (`metrik-goz panel`, default `127.0.0.1:8000`).
 
 | Endpoint | What it does |
 |---|---|
-| `POST /api/gorsel` | uploads an image (multipart `dosya`), produces an EXIF-free copy, returns `gorsel_id` |
-| `POST /api/ornek` | `{"ad": "duz"}` — generates a synthetic scene; returns the true answer and hint points too |
+| `POST /api/image` | uploads an image (multipart `file`), produces an EXIF-free copy, returns an image `id` |
+| `POST /api/sample` | `{"name": "flat"}` — generates a synthetic scene; returns the true answer and hint points too |
 | `POST /api/aruco` | looks for ArUco in the image, returns the corners and a typical `sigma_px` |
-| `POST /api/olc` | the measurement itself: reference + points → value, std, confidence interval, warning list |
-| `GET /api/durum` | version, OpenCV version, upload limit |
-| `GET /gorsel/<kimlik>` | the server's normalized copy of the uploaded image |
+| `POST /api/measure` | the measurement itself: reference + points → value, std, confidence interval, warning list |
+| `GET /api/status` | version, OpenCV version, upload limit |
+| `GET /image/<id>` | the server's normalized copy of the uploaded image |
 
-Warnings come back from `/api/olc` with a `seviye` (`yuksek` / `orta` / `bilgi`)
-and the most dangerous one is listed first; the thresholds differ per model,
-because the similarity and projective models are weak in different places.
+Warnings come back from `/api/measure` with a `level` (`high` / `medium` /
+`info`) and the most dangerous one is listed first; the thresholds differ per
+model, because the similarity and projective models are weak in different places.
 
 ---
 
@@ -263,8 +262,8 @@ When you don't have four points — you know only the diameter of the coin from
 your pocket — no projective transform can be built: two points and a length
 carry three numbers, while a projective transform has eight degrees of freedom.
 Rather than inventing the missing information, a narrower model is built
-(`Homografi.olcekten`): scale + rotation + translation, meaning perspective is
-**not** corrected. This is not a cheap shortcut; it is a declared and measured
+(`Homography.from_length`): scale + rotation + translation, meaning perspective
+is **not** corrected. This is not a cheap shortcut; it is a declared and measured
 limit — where it holds is below.
 
 Why DLT alone is not enough: DLT minimizes the *algebraic* error, while what we
@@ -275,13 +274,13 @@ The LM solver lives in this repo too (`lm.py`), because every uncertainty claim
 the package makes rests on the covariance the solver produces — we have no right
 to say "±3 cm" on top of a covariance whose origin we don't know. The analytic
 Jacobian was derived by hand and is checked against a numerical derivative
-(`testler/test_lm.py`).
+(`tests/test_lm.py`).
 
 **2 · Measurement.** Since a projective transform maps lines to lines, carrying
 the polygon corners onto the world plane and measuring there is enough. The one
-exception is `en_dar_gecit`: the boundary of the free space can be curved, so
-the scan runs on the world plane along cross-sections perpendicular to the axis
-of travel. In each cross-section the **longest** uninterrupted free run is
+exception is `narrowest_passage`: the boundary of the free space can be curved,
+so the scan runs on the world plane along cross-sections perpendicular to the
+axis of travel. In each cross-section the **longest** uninterrupted free run is
 taken — in a corridor split in two by an obstacle, the total width would be
 misleading.
 
@@ -304,7 +303,7 @@ A real photo has no ground truth — if it did, there would be nothing to measur
 So validation runs on synthetic scenes: we place the camera, the reference and
 the distance to be measured, and hand the system nothing but noisy pixels.
 
-Every number below is produced by `metrik-goz dogrula`; not one number in this
+Every number below is produced by `metrik-goz validate`; not one number in this
 README was typed by hand.
 
 ### Does the confidence interval actually hold
@@ -313,7 +312,7 @@ That is the real question. If the system says "95%", then across many
 independent measurements the true value should land inside that interval 95% of
 the time.
 
-![coverage](dogrulama/kapsama.png)
+![coverage](validation/coverage.png)
 
 The average over eight conditions is **94.3%**. The one-point shortfall from the
 nominal 95% is real and explainable: parametric bootstrap centers the
@@ -330,7 +329,7 @@ assumptions the hardest.
 
 ### How far does the error stay under 3%
 
-![error](dogrulama/hata_uzaklik.png)
+![error](validation/error_distance.png)
 
 | Condition | Coverage | Median error | p90 error |
 |---|---|---|---|
@@ -358,7 +357,7 @@ Everything above is for the four-point projective reference. Most of the time
 the user doesn't have one, they have a coin — and that model is weak somewhere
 else entirely.
 
-![similarity](dogrulama/benzerlik.png)
+![similarity](validation/similarity.png)
 
 | Condition | Systematic bias | Coverage |
 |---|---|---|
@@ -379,7 +378,7 @@ This is exactly the place where a system can fail silently, so we put it front
 and center.
 
 **The user doesn't know the tilt, but the system can see it.** In a tilted shot
-the opposite edges of the measured object diverge; `Kutu.dikdortgenlik` measures
+the opposite edges of the measured object diverge; `Box.rectangularity` measures
 that divergence and stands in as an observable proxy for tilt. A 6% threshold
 catches **78%** of biases larger than 5%, at the cost of 16% false alarms. The
 "this photo was shot at an angle, the error bar does not cover it" warning in
@@ -390,7 +389,7 @@ the decision.
 
 ### Does the fast route agree with the slow one
 
-![analytic](dogrulama/analitik_vs_mc.png)
+![analytic](validation/analytic_vs_mc.png)
 
 The standard deviation from analytic propagation is a median **1.00** times the
 Monte Carlo one. So inside this operating envelope the first-order approximation
@@ -406,12 +405,12 @@ are the places where the system fails silently:
 - **The plane assumption.** Everything you measure has to be on the same plane
   as the reference. You can measure the tomato on the table with the card you
   put on the table; you cannot measure the box on the shelf.
-  `Homografi.duzlem_disi_uyarisi` reports how far you have strayed from the
+  `Homography.off_plane_warning` reports how far you have strayed from the
   reference; above 2, don't trust the measurement.
 - **Perspective under a single-length scale.** A similarity model built from a
   coin's diameter does not correct perspective, and the bias it leaves is not
   inside the error bar — 16.9% bias and 27.1% coverage in a 30° tilted shot. The
-  system catches and warns about this through `Kutu.dikdortgenlik` (78% of the
+  system catches and warns about this through `Box.rectangularity` (78% of the
   serious biases), but 22% goes uncaught: shoot the photo from directly above
   the object, or use something rectangular as the reference and mark its four
   corners.
@@ -420,18 +419,18 @@ are the places where the system fails silently:
   the next step.
 - **Corner noise estimates.** The `sigma_px` defaults are empirical (ArUco 0.4;
   clicking by hand 1.5). Measuring them on your own setup gives a better answer.
-- **Mask quality in gap measurement.** `en_dar_gecit` assumes the free-space
-  mask it is given is correct. The mask's own error is not modeled in this
-  package — that is the segmentation layer's job.
+- **Mask quality in passage measurement.** `narrowest_passage` assumes the
+  free-space mask it is given is correct. The mask's own error is not modeled in
+  this package — that is the segmentation layer's job.
 
 ---
 
 ## Install and tests
 
 ```bash
-pip install -e ".[gelistirme]"
-pytest testler/ -q          # 56 tests, ~15 s
-metrik-goz dogrula          # produces the plots and sonuclar.json (~1 min)
+pip install -e ".[dev]"
+pytest tests/ -q            # 56 tests, ~15 s
+metrik-goz validate         # produces the plots and results.json (~1 min)
 metrik-goz panel            # open the web panel
 ```
 
@@ -442,30 +441,30 @@ supply your own corners the core runs without either. Python 3.10+.
 
 | Extra | What it brings |
 |---|---|
-| `.[goruntu]` | OpenCV — ArUco detection, image reading |
+| `.[image]` | OpenCV — ArUco detection, image reading |
 | `.[web]` | Flask + OpenCV — `metrik-goz panel` |
-| `.[grafik]` | matplotlib — `metrik-goz dogrula` plots |
-| `.[gelistirme]` | all of it + pytest |
+| `.[plot]` | matplotlib — `metrik-goz validate` plots |
+| `.[dev]` | all of it + pytest |
 
 ### Repo layout
 
 ```
 metrik_goz/
-  homografi.py     homography via DLT + LM, similarity model, off-plane warning
+  homography.py    homography via DLT + LM, similarity model, off-plane warning
   lm.py            hand-written Levenberg–Marquardt (analytic Jacobian)
-  olcum.py         mesafe, uzunluk, alan, kutu, en_dar_gecit
-  belirsizlik.py   Monte Carlo and analytic propagation, the Olcum type
-  referans.py      ArUco detection, known length/object tables
-  sentetik.py      scene generator with a known answer
-  ornek.py         the panel's and the CLI's sample scenes
-  dogrulama.py     coverage/error/similarity sweeps and their plots
+  measure.py       distance, length, area, box, narrowest_passage
+  uncertainty.py   Monte Carlo and analytic propagation, the Measurement type
+  reference.py     ArUco detection, known length/object tables
+  synthetic.py     scene generator with a known answer
+  sample.py        the panel's and the CLI's sample scenes
+  validation.py    coverage/error/similarity sweeps and their plots
   cli.py           command line
   web/             Flask server + panel (server computes, browser only pixels)
-testler/           56 tests: geometry, LM, coverage, web-library equality
-dogrulama/         output of `metrik-goz dogrula`: plots + sonuclar.json
-ornekler/          output of `metrik-goz ornek`: image + true-answer JSON
-metrik-goz-atolye/ a step-by-step workshop for writing the same core from
-                   scratch (deliberately half-done: tests ready, code is yours)
+tests/             56 tests: geometry, LM, coverage, web-library equality
+validation/        output of `metrik-goz validate`: plots + results.json
+examples/          output of `metrik-goz sample`: image + true-answer JSON
+metrik-goz-atolye/ a step-by-step workshop (in Turkish) for writing the same core
+                   from scratch (deliberately half-done: tests ready, code is yours)
 ```
 
 ---

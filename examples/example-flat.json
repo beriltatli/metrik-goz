@@ -1,0 +1,57 @@
+{
+  "name": "example-flat.png",
+  "description": "A phone on a table with a 1 TL coin beside it. The photo was taken almost straight down — this is the case where the simple scale model works correctly.",
+  "reference": {
+    "type": "scale",
+    "name": "1_tl",
+    "length_mm": 26.15
+  },
+  "default_measurement": "box",
+  "truth": {
+    "width": {
+      "value": 146.7,
+      "unit": "mm",
+      "description": "the phone's long edge"
+    },
+    "height": {
+      "value": 71.5,
+      "unit": "mm",
+      "description": "the phone's short edge"
+    },
+    "area": {
+      "value": 104.89049999999999,
+      "unit": "cm²",
+      "description": "the face of the phone"
+    }
+  },
+  "hint": {
+    "reference": [
+      [
+        292.89,
+        450.0
+      ],
+      [
+        369.13,
+        450.0
+      ]
+    ],
+    "box": [
+      [
+        975.0,
+        347.46
+      ],
+      [
+        553.67,
+        346.7
+      ],
+      [
+        553.67,
+        553.3
+      ],
+      [
+        975.0,
+        552.54
+      ]
+    ]
+  }
+}
